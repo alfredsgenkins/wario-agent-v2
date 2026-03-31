@@ -11,6 +11,7 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import axios, { type AxiosInstance } from "axios";
+import { markdownToAdf as marklassianConvert } from "marklassian";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -66,7 +67,8 @@ const TOOLS = [
   },
   {
     name: "jira_add_comment",
-    description: "Post a comment on a JIRA issue",
+    description:
+      "Post a comment on a JIRA issue. Body accepts Markdown: **bold**, *italic*, `code`, # headings, - lists, | tables |. To mention a user, first call jira_find_user to get their accountId, then write @[Display Name](accountId) in the body.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -76,10 +78,26 @@ const TOOLS = [
         },
         body: {
           type: "string",
-          description: "The comment text to post",
+          description:
+            "The comment body in Markdown. Use @[Display Name](accountId) for mentions.",
         },
       },
       required: ["issue_key", "body"],
+    },
+  },
+  {
+    name: "jira_find_user",
+    description:
+      "Search for a Jira user by name or email to get their accountId for @mentions in comments.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        query: {
+          type: "string",
+          description: "Name or email address to search for",
+        },
+      },
+      required: ["query"],
     },
   },
   {
@@ -189,18 +207,24 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           body: string;
         };
         await jira.post(`/issue/${issue_key}/comment`, {
-          body: {
-            type: "doc",
-            version: 1,
-            content: [
-              {
-                type: "paragraph",
-                content: [{ type: "text", text: body }],
-              },
-            ],
-          },
+          body: markdownToAdf(body),
         });
         return { content: [{ type: "text", text: "Comment posted." }] };
+      }
+
+      case "jira_find_user": {
+        const { query } = args as { query: string };
+        const { data } = await jira.get("/user/search", {
+          params: { query, maxResults: 10 },
+        });
+        const users = (data as any[]).map((u) => ({
+          accountId: u.accountId,
+          displayName: u.displayName,
+          emailAddress: u.emailAddress,
+        }));
+        return {
+          content: [{ type: "text", text: JSON.stringify(users, null, 2) }],
+        };
       }
 
       case "jira_get_attachments": {
@@ -303,6 +327,69 @@ function extractTextFromAdf(adf: any): string {
     return adf.content.map(extractTextFromAdf).join("");
   }
   return "";
+}
+
+// --- Helper: convert Markdown to ADF, with @[Name](accountId) mention support ---
+const MENTION_SENTINEL = "\x00MENTION";
+
+function markdownToAdf(markdown: string): any {
+  // Extract @[Name](accountId) mentions before marklassian sees them,
+  // replacing each with a unique sentinel string it will pass through as text.
+  const mentions: Array<{ id: string; text: string }> = [];
+  const processed = markdown.replace(
+    /@\[([^\]]+)\]\(([^)]+)\)/g,
+    (_, name, accountId) => {
+      const idx = mentions.length;
+      mentions.push({ id: accountId, text: `@${name}` });
+      return `${MENTION_SENTINEL}${idx}\x00`;
+    }
+  );
+
+  const adf = marklassianConvert(processed);
+
+  if (mentions.length > 0) {
+    replaceMentionSentinels(adf, mentions);
+  }
+
+  return adf;
+}
+
+// Walk ADF and split any text node containing sentinels into text + mention nodes.
+function replaceMentionSentinels(
+  node: any,
+  mentions: Array<{ id: string; text: string }>
+): void {
+  if (!node?.content) return;
+
+  const sentinelRe = new RegExp(`${MENTION_SENTINEL}(\\d+)\x00`, "g");
+
+  for (let i = 0; i < node.content.length; i++) {
+    const child = node.content[i];
+
+    if (child.type === "text" && sentinelRe.test(child.text)) {
+      sentinelRe.lastIndex = 0;
+      const newNodes: any[] = [];
+      let last = 0;
+      let m: RegExpExecArray | null;
+
+      while ((m = sentinelRe.exec(child.text)) !== null) {
+        if (m.index > last) {
+          newNodes.push({ ...child, text: child.text.slice(last, m.index) });
+        }
+        const mention = mentions[parseInt(m[1])];
+        newNodes.push({ type: "mention", attrs: { id: mention.id, text: mention.text } });
+        last = m.index + m[0].length;
+      }
+      if (last < child.text.length) {
+        newNodes.push({ ...child, text: child.text.slice(last) });
+      }
+
+      node.content.splice(i, 1, ...newNodes);
+      i += newNodes.length - 1;
+    } else {
+      replaceMentionSentinels(child, mentions);
+    }
+  }
 }
 
 // --- Connect over stdio ---

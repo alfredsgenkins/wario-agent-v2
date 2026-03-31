@@ -118,7 +118,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const githubEvent = req.headers["x-github-event"] as string;
       const payload = JSON.parse(body);
-      const event = parseGitHubWebhook(githubEvent, payload);
+      const event = await parseGitHubWebhook(githubEvent, payload);
       if (!event) return;
 
       console.log(

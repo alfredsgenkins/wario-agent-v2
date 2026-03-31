@@ -13,6 +13,8 @@ const LOGS_DIR = path.join(ROOT, "logs");
 
 fs.mkdirSync(LOGS_DIR, { recursive: true });
 
+const DEBOUNCE_MS = 4000;
+
 interface ManagedSession {
   issueKey: string;
   projectKey: string;
@@ -22,6 +24,7 @@ interface ManagedSession {
   logStream: fs.WriteStream;
   status: "active" | "idle";
   eventQueue: WebhookEvent[];
+  debounceTimer: NodeJS.Timeout | null;
 }
 
 const sessions = new Map<string, ManagedSession>();
@@ -55,23 +58,43 @@ export function dispatchEvent(
   project: ProjectConfig
 ): void {
   const { issueKey } = event;
-  const managed = sessions.get(issueKey);
+  let managed = sessions.get(issueKey);
 
-  if (managed) {
-    if (managed.status === "active") {
-      log(issueKey, `Session busy, queueing: ${event.eventType}`);
-      managed.eventQueue.push(event);
-      return;
-    }
-    // Idle — run next turn
-    runTurn(managed, event);
-  } else {
-    // New session
-    startSession(event, project);
+  if (!managed) {
+    managed = initSession(event, project);
   }
+
+  if (managed.status === "active") {
+    log(issueKey, `Session busy, queueing: ${event.eventType}`);
+    managed.eventQueue.push(event);
+    return;
+  }
+
+  // Idle — debounce to batch rapid-fire events (e.g. simultaneous PR review + comments)
+  managed.eventQueue.push(event);
+  if (managed.debounceTimer) clearTimeout(managed.debounceTimer);
+  log(issueKey, `Debouncing: ${event.eventType} (${DEBOUNCE_MS}ms window)`);
+  managed.debounceTimer = setTimeout(() => {
+    managed!.debounceTimer = null;
+    const pending = managed!.eventQueue.splice(0);
+    if (pending.length === 0) return;
+    const combined = pending.length === 1 ? pending[0] : combineEvents(pending);
+    runTurn(managed!, combined);
+  }, DEBOUNCE_MS);
 }
 
-function startSession(event: WebhookEvent, project: ProjectConfig): void {
+function combineEvents(events: WebhookEvent[]): WebhookEvent {
+  const first = events[0];
+  const body = events
+    .map((e, i) => `[Event ${i + 1}: ${e.eventType}]\n${e.message}`)
+    .join("\n\n---\n\n");
+  return {
+    ...first,
+    message: `${events.length} events received together:\n\n${body}`,
+  };
+}
+
+function initSession(event: WebhookEvent, project: ProjectConfig): ManagedSession {
   const { issueKey, projectKey } = event;
   const sessionId = issueKeyToUUID(issueKey);
 
@@ -89,6 +112,7 @@ function startSession(event: WebhookEvent, project: ProjectConfig): void {
     logStream,
     status: "idle",
     eventQueue: [],
+    debounceTimer: null,
   };
 
   sessions.set(issueKey, managed);
@@ -97,13 +121,13 @@ function startSession(event: WebhookEvent, project: ProjectConfig): void {
     issueKey,
     projectKey,
     sessionId,
-    status: "active",
+    status: "idle",
     createdAt: new Date().toISOString(),
     lastEventAt: new Date().toISOString(),
   });
 
   log(issueKey, `New session created (${sessionId})`);
-  runTurn(managed, event);
+  return managed;
 }
 
 /** Run a single claude -p turn for a session */
