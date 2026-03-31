@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "jira": {
+      "command": "npx",
+      "args": ["tsx", "./channels/jira-tools.ts"],
+      "env": {
+        "JIRA_BASE_URL": "https://scandiflow.atlassian.net",
+        "JIRA_USER_EMAIL": "agent-wario@scandiweb.com",
+        "JIRA_API_TOKEN": "${JIRA_API_TOKEN}"
+      }
+    }
+  }
+}

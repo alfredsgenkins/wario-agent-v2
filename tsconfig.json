@@ -10,6 +10,6 @@
     "rootDir": ".",
     "declaration": true
   },
-  "include": ["channels/**/*.ts", "scripts/**/*.ts"],
+  "include": ["channels/**/*.ts", "orchestrator/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["node_modules", "dist", "worktrees"]
 }

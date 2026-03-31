@@ -1,7 +1,9 @@
 node_modules/
 worktrees/
+logs/
 .ssh/
 .env
+.wario-sessions.json
 dist/
 *.js
 *.d.ts
