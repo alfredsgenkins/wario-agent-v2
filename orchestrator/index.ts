@@ -24,6 +24,13 @@ dotenvLoad();
 const PORT = parseInt(process.env.WEBHOOK_PORT || "8788", 10);
 const ROOT = path.resolve(import.meta.dirname, "..");
 
+// Parse --issue filter from argv
+const issueArgIdx = process.argv.indexOf("--issue");
+const issueFilter = issueArgIdx !== -1 ? process.argv[issueArgIdx + 1] : undefined;
+if (issueFilter) {
+  console.log(`Filtering to issue: ${issueFilter}`);
+}
+
 // Load project registry
 function loadProjects(): ProjectConfig[] {
   const raw = fs.readFileSync(path.join(ROOT, "projects.yaml"), "utf-8");
@@ -86,6 +93,7 @@ const server = http.createServer(async (req, res) => {
       const payload = JSON.parse(body);
       const event = parseJiraWebhook(payload);
       if (!event) return;
+      if (issueFilter && event.issueKey !== issueFilter) return;
 
       const project = findProject(event.projectKey);
       if (!project) return;
@@ -115,6 +123,7 @@ const server = http.createServer(async (req, res) => {
       const payload = JSON.parse(body);
       const event = await parseGitHubWebhook(githubEvent, payload);
       if (!event) return;
+      if (issueFilter && event.issueKey !== issueFilter) return;
 
       console.log(
         `[GitHub] ${event.eventType} on ${event.issueKey} (PR event: ${githubEvent})`
@@ -148,7 +157,7 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`  Health:   /health`);
 
   // Recover interrupted/missed sessions
-  recoverSessions(loadProjects()).catch((err) => {
+  recoverSessions(loadProjects(), issueFilter).catch((err) => {
     console.error(`[Recovery] Failed: ${err.message}`);
   });
 

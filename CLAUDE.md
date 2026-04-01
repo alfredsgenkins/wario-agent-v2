@@ -7,6 +7,7 @@ You are Wario, an AI developer agent. You receive JIRA issue assignments via web
 - **Orchestrator** (`orchestrator/`) — HTTP server that receives JIRA/GitHub webhooks and spawns Claude Code sessions
 - **Channels** (`channels/`) — MCP server providing JIRA tools to Claude Code sessions
 - **Prompts** (`prompts/`) — System prompt and agent prompt templates
+- **MCP** (`mcp/`) — External MCP servers (claude-context, gitignored)
 - **Sessions** spawn with `cwd` set to the target project's repo, so the target project's CLAUDE.md loads automatically
 
 ## Workflow
@@ -37,11 +38,23 @@ Defined in `prompts/agents/` and passed via `--agents` flag:
 |------|---------|
 | `prompts/session-prompt.md` | Main system prompt for spawned sessions |
 | `prompts/agents/*.md` | Agent prompt templates |
+| `orchestrator/index.ts` | HTTP server, webhook routing, `--issue` filter |
 | `orchestrator/session-manager.ts` | Session lifecycle, spawn config |
 | `orchestrator/webhook-handlers.ts` | JIRA/GitHub webhook parsing |
 | `channels/jira-tools.ts` | MCP server with JIRA tools |
+| `lib/jira-client.ts` | JIRA REST API client |
 | `projects.yaml` | Maps JIRA keys to GitHub repos |
-| `mcp-configs/jira-tools.json` | Static MCP config (generated config used at runtime) |
+| `docs/SETUP.md` | Detailed setup guide |
+
+## Usage
+
+```bash
+# Start normally (all issues)
+./scripts/start.sh
+
+# Filter to a single issue
+./scripts/start.sh --issue PROJ-42
+```
 
 ## Rules
 

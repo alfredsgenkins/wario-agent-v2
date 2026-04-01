@@ -3,7 +3,6 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import os from "node:os";
 import type { ProjectConfig, WebhookEvent } from "./types.js";
 import * as store from "./session-store.js";
 import { JiraClient } from "../lib/jira-client.js";
@@ -48,7 +47,7 @@ function buildMcpConfig(): string {
       },
       "claude-context": {
         command: "node",
-        args: [path.join(os.homedir(), "Projects", "claude-context", "packages", "mcp", "dist", "index.js")],
+        args: [path.join(ROOT, "mcp", "claude-context", "packages", "mcp", "dist", "index.js")],
         env: {
           OPENAI_API_KEY: "${OPENAI_API_KEY}",
           MILVUS_TOKEN: "${MILVUS_TOKEN}",
@@ -349,7 +348,7 @@ export function shutdown(): void {
 }
 
 /** Recover sessions on startup: fix stale state + pick up missed JIRA assignments */
-export async function recoverSessions(projects: ProjectConfig[]): Promise<void> {
+export async function recoverSessions(projects: ProjectConfig[], issueFilter?: string): Promise<void> {
   // Part 1: Fix stale active sessions (orchestrator just started, nothing is running)
   const allSessions = store.getAllSessions();
   let staleCount = 0;
@@ -372,7 +371,7 @@ export async function recoverSessions(projects: ProjectConfig[]): Promise<void> 
   }
 
   try {
-    const jql = `assignee=${accountId} AND status IN ("New","To Do","In Progress") ORDER BY updated DESC`;
+    const jql = `assignee=${accountId} AND status IN ("New","To Do","In Progress")${issueFilter ? ` AND key = "${issueFilter}"` : ""} ORDER BY updated DESC`;
     const result = await jira.searchIssues(jql);
     console.log(`[Recovery] Found ${result.issues.length} assigned issue(s) in JIRA`);
 

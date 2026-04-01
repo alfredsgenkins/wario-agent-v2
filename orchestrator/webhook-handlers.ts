@@ -4,7 +4,7 @@ import { extractTextFromAdf } from "../lib/jira-client.js";
 
 const WARIO_JIRA_ACCOUNT_ID = process.env.WARIO_JIRA_ACCOUNT_ID;
 const WARIO_GITHUB_LOGIN = process.env.WARIO_GITHUB_LOGIN;
-const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_APP_WEBHOOK_SECRET;
+const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 const WARIO_BRANCH_PREFIX = "wario/";
 
 /** Check if a JIRA user is Wario by account ID */
