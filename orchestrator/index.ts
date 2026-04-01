@@ -96,7 +96,15 @@ const server = http.createServer(async (req, res) => {
       if (issueFilter && event.issueKey !== issueFilter) return;
 
       const project = findProject(event.projectKey);
-      if (!project) return;
+      if (!project) {
+        console.log(
+          `[JIRA] Received ${event.eventType} for ${event.issueKey}, but project "${event.projectKey}" is not configured.`
+        );
+        console.log(
+          `       To make Wario work on this project, clone the repo locally, then run: ./scripts/add-project.sh`
+        );
+        return;
+      }
 
       console.log(`[JIRA] ${event.eventType} on ${event.issueKey}`);
       dispatchEvent(event, project);
@@ -132,7 +140,10 @@ const server = http.createServer(async (req, res) => {
       const project = findProject(event.projectKey);
       if (!project) {
         console.log(
-          `[GitHub] No project configured for key: ${event.projectKey}`
+          `[GitHub] Received ${event.eventType} for ${event.issueKey}, but project "${event.projectKey}" is not configured.`
+        );
+        console.log(
+          `        To make Wario work on this project, clone the repo locally, then run: ./scripts/add-project.sh`
         );
         return;
       }

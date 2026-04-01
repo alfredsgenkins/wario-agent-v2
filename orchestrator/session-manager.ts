@@ -379,7 +379,12 @@ export async function recoverSessions(projects: ProjectConfig[], issueFilter?: s
       const issueKey = issue.key;
       const projectKey = issueKey.split("-")[0];
       const project = projects.find((p) => p.jiraProjectKey === projectKey);
-      if (!project) continue;
+      if (!project) {
+        console.log(
+          `[Recovery] ${issueKey}: project "${projectKey}" is not configured. To add it, clone the repo locally, then run: ./scripts/add-project.sh`
+        );
+        continue;
+      }
 
       // Check if PR already exists
       let prExists = false;

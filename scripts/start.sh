@@ -235,7 +235,7 @@ fi
 gh_response=$(curl -s -w "\n%{http_code}" -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/user" 2>/dev/null)
 gh_status=$(echo "$gh_response" | tail -1)
 if [ "$gh_status" = "200" ]; then
-  gh_login=$(echo "$gh_response" | sed '$d' | grep -o '"login":"[^"]*"' | head -1 | cut -d'"' -f4)
+  gh_login=$(echo "$gh_response" | sed '$d' | grep -o '"login" *: *"[^"]*"' | head -1 | sed 's/.*: *"//;s/"//')
   ok "GitHub API ($gh_login)"
 else
   fail "GitHub API returned $gh_status" "Check GITHUB_TOKEN has repo scope"
@@ -301,11 +301,16 @@ echo ""
 if [ $project_errors -gt 0 ]; then
   needs_setup=true
   echo "Found $project_errors project access issue(s)."
+  echo ""
+  echo "To fix a project: make sure the repo is cloned locally, then run:"
+  echo "  ./scripts/add-project.sh"
+  echo ""
+  echo "Or, launching setup assistant to help debug..."
 
   setup_context="The .env file is at: $(pwd)/.env. The projects.yaml file is at: $(pwd)/projects.yaml."
   setup_prompt="Some project access checks failed. Help me fix the issues — validate and correct my .env credentials and projects.yaml configuration."
 
-  echo "Launching setup assistant..."
+  echo ""
   echo ""
 
   set +e
