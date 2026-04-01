@@ -10,23 +10,14 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import axios, { type AxiosInstance } from "axios";
 import { markdownToAdf as marklassianConvert } from "marklassian";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-
-// --- Config from env ---
-const JIRA_BASE_URL = process.env.JIRA_BASE_URL!;
-const JIRA_USER_EMAIL = process.env.JIRA_USER_EMAIL!;
-const JIRA_API_TOKEN = process.env.JIRA_API_TOKEN!;
+import { JiraClient, extractTextFromAdf } from "../lib/jira-client.js";
 
 // --- JIRA API client ---
-const jira: AxiosInstance = axios.create({
-  baseURL: `${JIRA_BASE_URL}/rest/api/3`,
-  auth: { username: JIRA_USER_EMAIL, password: JIRA_API_TOKEN },
-  headers: { "Content-Type": "application/json", Accept: "application/json" },
-});
+const jira = JiraClient.fromEnv()!;
 
 // --- MCP Server (tools only) ---
 const mcp = new Server(
@@ -164,11 +155,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     switch (name) {
       case "jira_get_issue": {
         const { issue_key } = args as { issue_key: string };
-        const { data } = await jira.get(`/issue/${issue_key}`, {
-          params: {
-            fields:
-              "summary,description,status,assignee,labels,components,issuetype,priority,comment",
-          },
+        const data = await jira.get(`/issue/${issue_key}`, {
+          fields:
+            "summary,description,status,assignee,labels,components,issuetype,priority,comment",
         });
         const fields = data.fields;
         const result = {
@@ -189,7 +178,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       case "jira_get_comments": {
         const { issue_key } = args as { issue_key: string };
-        const { data } = await jira.get(`/issue/${issue_key}/comment`);
+        const data = await jira.get(`/issue/${issue_key}/comment`);
         const comments = data.comments.map((c: any) => ({
           id: c.id,
           author: c.author?.displayName,
@@ -214,8 +203,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       case "jira_find_user": {
         const { query } = args as { query: string };
-        const { data } = await jira.get("/user/search", {
-          params: { query, maxResults: 10 },
+        const data = await jira.get("/user/search", {
+          query,
+          maxResults: "10",
         });
         const users = (data as any[]).map((u) => ({
           accountId: u.accountId,
@@ -229,8 +219,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       case "jira_get_attachments": {
         const { issue_key } = args as { issue_key: string };
-        const { data } = await jira.get(`/issue/${issue_key}`, {
-          params: { fields: "attachment" },
+        const data = await jira.get(`/issue/${issue_key}`, {
+          fields: "attachment",
         });
         const attachments = (data.fields.attachment || []).map((a: any) => ({
           id: a.id,
@@ -250,14 +240,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           attachment_url: string;
           filename: string;
         };
-        const response = await axios.get(attachment_url, {
-          auth: { username: JIRA_USER_EMAIL, password: JIRA_API_TOKEN },
-          responseType: "arraybuffer",
-        });
+        const buffer = await jira.downloadUrl(attachment_url);
         const tmpDir = path.join(os.tmpdir(), "wario-attachments");
         await fs.mkdir(tmpDir, { recursive: true });
         const filePath = path.join(tmpDir, filename);
-        await fs.writeFile(filePath, response.data);
+        await fs.writeFile(filePath, buffer);
         return {
           content: [
             {
@@ -273,7 +260,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           issue_key: string;
           status_name: string;
         };
-        const { data: transData } = await jira.get(
+        const transData = await jira.get(
           `/issue/${issue_key}/transitions`
         );
         const transition = transData.transitions.find(
@@ -309,25 +296,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error: any) {
-    const message =
-      error.response?.data?.errorMessages?.join(", ") ||
-      (error.response?.data?.errors
-        ? JSON.stringify(error.response.data.errors)
-        : error.message);
-    return { content: [{ type: "text", text: `Error: ${message}` }] };
+    return { content: [{ type: "text", text: `Error: ${error.message}` }] };
   }
 });
-
-// --- Helper: extract plain text from Atlassian Document Format ---
-function extractTextFromAdf(adf: any): string {
-  if (!adf) return "";
-  if (typeof adf === "string") return adf;
-  if (adf.type === "text") return adf.text || "";
-  if (adf.content) {
-    return adf.content.map(extractTextFromAdf).join("");
-  }
-  return "";
-}
 
 // --- Helper: convert Markdown to ADF, with @[Name](accountId) mention support ---
 const MENTION_SENTINEL = "\x00MENTION";

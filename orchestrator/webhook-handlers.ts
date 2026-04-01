@@ -1,20 +1,16 @@
 import crypto from "node:crypto";
 import type { WebhookEvent } from "./types.js";
+import { extractTextFromAdf } from "../lib/jira-client.js";
 
-const VARIO_DISPLAY_NAME = process.env.VARIO_DISPLAY_NAME || "Wario";
+const WARIO_JIRA_ACCOUNT_ID = process.env.WARIO_JIRA_ACCOUNT_ID;
 const WARIO_GITHUB_LOGIN = process.env.WARIO_GITHUB_LOGIN;
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_APP_WEBHOOK_SECRET;
 const WARIO_BRANCH_PREFIX = "wario/";
 
-/** Extract plain text from Atlassian Document Format */
-function extractTextFromAdf(adf: any): string {
-  if (!adf) return "";
-  if (typeof adf === "string") return adf;
-  if (adf.type === "text") return adf.text || "";
-  if (adf.content) {
-    return adf.content.map(extractTextFromAdf).join("");
-  }
-  return "";
+/** Check if a JIRA user is Wario by account ID */
+function isWarioUser(accountId?: string): boolean {
+  if (!WARIO_JIRA_ACCOUNT_ID) return false;
+  return accountId === WARIO_JIRA_ACCOUNT_ID;
 }
 
 /** Parse a JIRA webhook payload into a WebhookEvent (or null to skip) */
@@ -26,10 +22,14 @@ export function parseJiraWebhook(payload: any): WebhookEvent | null {
   const issueKey = issue.key;
   const projectKey = issueKey.split("-")[0];
 
+  // Only process issues assigned to Wario
+  const assigneeId = issue.fields?.assignee?.accountId;
+  if (!isWarioUser(assigneeId)) return null;
+
   if (event === "comment_created") {
-    const commentAuthor = payload.comment?.author?.displayName;
+    const commentAuthorId = payload.comment?.author?.accountId;
     // Ignore our own comments
-    if (commentAuthor === VARIO_DISPLAY_NAME) return null;
+    if (isWarioUser(commentAuthorId)) return null;
 
     const body = extractTextFromAdf(payload.comment?.body);
     return {
@@ -37,14 +37,13 @@ export function parseJiraWebhook(payload: any): WebhookEvent | null {
       eventType: "comment",
       issueKey,
       projectKey,
-      message: `New JIRA comment on ${issueKey} by ${commentAuthor}:\n\n${body}\n\nUse jira_get_comments for full context and continue your work.`,
+      message: `New JIRA comment on ${issueKey} by ${payload.comment?.author?.displayName}:\n\n${body}\n\nUse jira_get_comments for full context and continue your work.`,
     };
   }
 
   // Any other event — treat as assignment/new work
   // Skip events triggered by Wario itself (e.g. status transitions)
-  const actor = payload.user?.displayName;
-  if (actor === VARIO_DISPLAY_NAME) return null;
+  if (isWarioUser(payload.user?.accountId)) return null;
 
   const summary = issue.fields?.summary || "N/A";
   return {

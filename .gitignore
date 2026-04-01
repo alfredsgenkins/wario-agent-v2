@@ -4,6 +4,9 @@ logs/
 .ssh/
 .env
 .wario-sessions.json
+mcp-configs/.generated-mcp.json
+codebase-maps/
+task-state/
 dist/
 *.js
 *.d.ts

@@ -43,12 +43,6 @@ export function updateStatus(
   }
 }
 
-export function deleteSession(issueKey: string): void {
-  const store = read();
-  delete store[issueKey];
-  write(store);
-}
-
-export function listSessions(): SessionRecord[] {
-  return Object.values(read());
+export function getAllSessions(): Store {
+  return read();
 }

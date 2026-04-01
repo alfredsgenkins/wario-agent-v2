@@ -13,6 +13,9 @@ import {
 import {
   dispatchEvent,
   listActiveSessions,
+  shutdown,
+  recoverSessions,
+  startHealthCheck,
 } from "./session-manager.js";
 
 // Load .env
@@ -84,18 +87,10 @@ const server = http.createServer(async (req, res) => {
       const event = parseJiraWebhook(payload);
       if (!event) return;
 
-      console.log(
-        `[JIRA] ${event.eventType} on ${event.issueKey} (${event.projectKey})`
-      );
-
       const project = findProject(event.projectKey);
-      if (!project) {
-        console.log(
-          `[JIRA] No project configured for key: ${event.projectKey}`
-        );
-        return;
-      }
+      if (!project) return;
 
+      console.log(`[JIRA] ${event.eventType} on ${event.issueKey}`);
       dispatchEvent(event, project);
     } catch (e: any) {
       console.error(`[JIRA] Webhook error: ${e.message}`);
@@ -151,4 +146,29 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`  Sessions: /sessions`);
   console.log(`  Logs:     /logs/{ISSUE-KEY}`);
   console.log(`  Health:   /health`);
+
+  // Recover interrupted/missed sessions
+  recoverSessions(loadProjects()).catch((err) => {
+    console.error(`[Recovery] Failed: ${err.message}`);
+  });
+
+  // Start periodic health check for dead child processes
+  startHealthCheck();
 });
+
+// Crash protection — log but don't die on stray errors
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught exception:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] Unhandled rejection:", reason);
+});
+
+// Clean shutdown — kill child processes
+for (const sig of ["SIGINT", "SIGTERM"] as const) {
+  process.on(sig, () => {
+    console.log(`\nReceived ${sig}, shutting down...`);
+    shutdown();
+    server.close(() => process.exit(0));
+  });
+}
