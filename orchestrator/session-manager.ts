@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import type { ProjectConfig, WebhookEvent } from "./types.js";
+import type { ProjectConfig, RepoConfig, WebhookEvent } from "./types.js";
 import * as store from "./session-store.js";
 import { JiraClient } from "../lib/jira-client.js";
 
@@ -79,6 +79,22 @@ function buildAgentsJson(): string {
     }
   }
   return JSON.stringify(agents);
+}
+
+/** Build the append-system-prompt with project/repo context */
+function buildAppendPrompt(managed: ManagedSession, project: ProjectConfig): string {
+  const repos = project.repos || [];
+  const repoLines = repos.map((r) =>
+    `- **${r.name}**: path=\`${r.path}\`, GitHub=${r.github.owner}/${r.github.repo}, upstream=\`${r.upstreamBranch}\``
+  ).join("\n");
+
+  return [
+    `Issue: ${managed.issueKey}. Project key: ${managed.projectKey}. Wario root: ${ROOT}.`,
+    repos.length === 1
+      ? `Upstream branch: ${repos[0].upstreamBranch}. GitHub: ${repos[0].github.owner}/${repos[0].github.repo}.`
+      : `This project has ${repos.length} repos:\n${repoLines}\nCreate worktrees and PRs for each repo that has changes.`,
+    project.instructions || "",
+  ].filter(Boolean).join("\n\n");
 }
 
 /** Deterministic UUID v5 from issue key */
@@ -222,7 +238,7 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
           "--system-prompt-file",
           PROMPT_FILE,
           "--append-system-prompt",
-          `Issue: ${issueKey}. Project key: ${managed.projectKey}. Upstream branch: ${project.upstreamBranch}. GitHub: ${project.github.owner}/${project.github.repo}. Wario root: ${ROOT}. ${project.instructions || ""}`,
+          buildAppendPrompt(managed, project),
         ]),
     "--output-format",
     "stream-json",
@@ -386,16 +402,22 @@ export async function recoverSessions(projects: ProjectConfig[], issueFilter?: s
         continue;
       }
 
-      // Check if PR already exists
+      // Check if PR already exists in any of the project's repos
+      const repos = project.repos || [];
       let prExists = false;
-      try {
-        const prJson = execSync(
-          `gh pr list --repo ${project.github.owner}/${project.github.repo} --head wario/${issueKey} --state open --json number`,
-          { encoding: "utf-8", timeout: 10_000, stdio: ["pipe", "pipe", "pipe"] }
-        ).trim();
-        prExists = prJson !== "[]" && prJson.length > 2;
-      } catch {
-        // gh not available or error — assume no PR
+      for (const repo of repos) {
+        try {
+          const prJson = execSync(
+            `gh pr list --repo ${repo.github.owner}/${repo.github.repo} --head wario/${issueKey} --state open --json number`,
+            { encoding: "utf-8", timeout: 10_000, stdio: ["pipe", "pipe", "pipe"] }
+          ).trim();
+          if (prJson !== "[]" && prJson.length > 2) {
+            prExists = true;
+            break;
+          }
+        } catch {
+          // gh not available or error — assume no PR
+        }
       }
 
       if (prExists) {

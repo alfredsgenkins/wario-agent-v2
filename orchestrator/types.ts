@@ -1,10 +1,22 @@
+export interface RepoConfig {
+  name: string;
+  github: { owner: string; repo: string };
+  path: string; // relative to localRepoPath (e.g. "." or "./real-melrose")
+  upstreamBranch: string;
+}
+
 export interface ProjectConfig {
   jiraProjectKey: string;
-  github: { owner: string; repo: string };
   localRepoPath: string;
-  upstreamBranch: string;
   instructions?: string;
   maxBudgetUsd?: number;
+
+  // Multi-repo (preferred)
+  repos?: RepoConfig[];
+
+  // Single-repo (backward compat — normalized to repos[] at load time)
+  github?: { owner: string; repo: string };
+  upstreamBranch?: string;
 }
 
 export interface ProjectsYaml {

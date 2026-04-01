@@ -20,12 +20,17 @@ If the codebase map exists but is older than 7 days, re-run the mapper.
 1. Use `jira_get_issue` to read the full issue details
 2. Read `projects.yaml` in the Wario root directory (available via `--add-dir`) to find the matching project by `jiraProjectKey`
 3. Read the codebase map at `{Wario root}/codebase-maps/{projectKey}.md` for project context
-4. Ensure a clean upstream state: `git fetch origin && git checkout -f {upstreamBranch} && git reset --hard origin/{upstreamBranch}`
-5. Create a worktree from the upstream branch: `git worktree add ../worktrees/{issueKey} -b wario/{issueKey} origin/{upstreamBranch}`
-6. `cd` into the worktree
-7. Check semantic index: `mcp__claude-context__get_indexing_status`. If stale, run `mcp__claude-context__index_codebase`
-8. Use `jira_get_attachments` and `jira_download_attachment` if the issue has image attachments
-9. If anything is unclear or ambiguous, use `jira_add_comment` to ask a clarifying question, then **stop and wait**
+4. **Set up repos** — the project may have one or multiple repos (listed in the append-system-prompt). For **each repo**:
+   - `cd` to the repo path (relative to your cwd, e.g. `.` or `./real-melrose`)
+   - `git fetch origin && git checkout -f {upstreamBranch} && git reset --hard origin/{upstreamBranch}`
+   - `git worktree add ../worktrees/{issueKey} -b wario/{issueKey} origin/{upstreamBranch}`
+   - Then `cd` back to the project root
+5. `cd` into the **primary** worktree (the first repo's worktree at `../worktrees/{issueKey}`)
+6. Check semantic index: `mcp__claude-context__get_indexing_status`. If stale, run `mcp__claude-context__index_codebase`
+7. Use `jira_get_attachments` and `jira_download_attachment` if the issue has image attachments
+8. If anything is unclear or ambiguous, use `jira_add_comment` to ask a clarifying question, then **stop and wait**
+
+**Single-repo projects**: steps 4-5 simplify to the previous behavior — one worktree, one branch.
 
 ## Phase 2: Assess & Route
 
@@ -51,9 +56,12 @@ For clear, scoped tasks:
 1. Explore relevant code (semantic search first, then grep/glob for exact matches)
 2. Implement the changes following existing patterns
 3. **Verify**: run the appropriate check (build, lint, test, or manual trace) and confirm output passes. Never say "should work" — only "works" after seeing evidence.
-4. Commit: `{issueKey}: description of changes`
-5. Push: `git push -u origin wario/{issueKey}`
-6. → Phase 4
+4. **Commit & push each repo that has changes**:
+   - `cd` to the repo's worktree path
+   - `git add` and commit: `{issueKey}: description of changes`
+   - `git push -u origin wario/{issueKey}`
+   - Repeat for each repo with modifications
+5. → Phase 4
 
 ## Phase 3b: PLANNED Implementation
 
@@ -141,7 +149,7 @@ After all steps, verify the **goal** — not just that tasks completed:
    - **Wired**: Is it imported/called/rendered? `grep` for imports and usage
    - **Works**: Does the verification command pass?
 3. If gaps found: fix them inline
-4. Push: `git push -u origin wario/{issueKey}`
+4. **Push each repo that has changes**: `cd` to each repo's worktree, `git push -u origin wario/{issueKey}`
 5. → Phase 4
 
 ## Phase 4: Self-Review
@@ -149,7 +157,7 @@ After all steps, verify the **goal** — not just that tasks completed:
 **Applies to ALL tasks** (both DIRECT and PLANNED).
 
 After pushing, dispatch a `wario-reviewer` agent with:
-- `git diff {upstreamBranch}...HEAD` output
+- `git diff {upstreamBranch}...HEAD` output from **each repo that has changes** (label each diff with the repo name)
 - The issue summary and acceptance criteria
 - The conventions section from the codebase map
 
@@ -161,16 +169,18 @@ Handle findings:
 
 ## Phase 5: Finalize
 
-1. Open a PR:
-   ```
-   gh pr create --base {upstreamBranch} --title "{issueKey}: summary" --body "description"
-   ```
-   PR body should include:
-   - What was changed and why
-   - Any MINOR findings from review
-   - Approach rationale (for PLANNED tasks)
+1. **Open a PR for each repo that has changes**:
+   - `cd` to the repo's worktree path
+   - ```
+     gh pr create --repo {owner}/{repo} --base {upstreamBranch} --head wario/{issueKey} --title "{issueKey}: summary" --body "description"
+     ```
+   - PR body should include:
+     - What was changed and why
+     - Any MINOR findings from review
+     - Approach rationale (for PLANNED tasks)
+     - For multi-repo changes: link to the companion PR(s) in the other repo(s)
 
-2. Post the PR link as a JIRA comment using `jira_add_comment`
+2. Post all PR link(s) as a JIRA comment using `jira_add_comment`
 3. Transition the issue to "In Review" using `jira_transition_issue`
 
 ## On follow-up messages

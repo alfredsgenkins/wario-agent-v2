@@ -4,7 +4,7 @@ import http from "node:http";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { dotenvLoad } from "./env.js";
-import type { ProjectConfig, ProjectsYaml } from "./types.js";
+import type { ProjectConfig, ProjectsYaml, RepoConfig } from "./types.js";
 import {
   parseJiraWebhook,
   parseGitHubWebhook,
@@ -31,11 +31,40 @@ if (issueFilter) {
   console.log(`Filtering to issue: ${issueFilter}`);
 }
 
+// Parse --no-filter-self flag
+const noFilterSelf = process.argv.includes("--no-filter-self");
+if (noFilterSelf) {
+  console.log("Self-event filtering disabled (--no-filter-self)");
+}
+
+// Webhook test state — records last received webhook for verification
+let webhookTestState: { jira: string | null; github: string | null } = {
+  jira: null,
+  github: null,
+};
+
+// Normalize single-repo shorthand into repos[] array
+function normalizeProject(p: ProjectConfig): ProjectConfig {
+  if (p.repos && p.repos.length > 0) return p;
+  if (!p.github || !p.upstreamBranch) return p;
+  return {
+    ...p,
+    repos: [
+      {
+        name: p.github.repo,
+        github: p.github,
+        path: ".",
+        upstreamBranch: p.upstreamBranch,
+      },
+    ],
+  };
+}
+
 // Load project registry
 function loadProjects(): ProjectConfig[] {
   const raw = fs.readFileSync(path.join(ROOT, "projects.yaml"), "utf-8");
   const parsed = parseYaml(raw) as ProjectsYaml;
-  return parsed.projects || [];
+  return (parsed.projects || []).map(normalizeProject);
 }
 
 function findProject(projectKey: string): ProjectConfig | undefined {
@@ -72,6 +101,20 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Webhook test status
+  if (req.method === "GET" && req.url === "/webhooks/test") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(webhookTestState, null, 2));
+    return;
+  }
+  // Reset test state
+  if (req.method === "DELETE" && req.url === "/webhooks/test") {
+    webhookTestState = { jira: null, github: null };
+    res.writeHead(200);
+    res.end("reset");
+    return;
+  }
+
   if (req.method !== "POST") {
     res.writeHead(404);
     res.end("Not found");
@@ -91,7 +134,8 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const payload = JSON.parse(body);
-      const event = parseJiraWebhook(payload);
+      webhookTestState.jira = `received ${payload.webhookEvent || "unknown"} at ${new Date().toISOString()}`;
+      const event = parseJiraWebhook(payload, { noFilterSelf });
       if (!event) return;
       if (issueFilter && event.issueKey !== issueFilter) return;
 
@@ -129,7 +173,17 @@ const server = http.createServer(async (req, res) => {
     try {
       const githubEvent = req.headers["x-github-event"] as string;
       const payload = JSON.parse(body);
-      const event = await parseGitHubWebhook(githubEvent, payload);
+
+      // Record for webhook testing (including ping)
+      const repoName = payload.repository?.full_name || "unknown";
+      webhookTestState.github = `received ${githubEvent} from ${repoName} at ${new Date().toISOString()}`;
+
+      if (githubEvent === "ping") {
+        console.log(`[GitHub] Ping received from ${repoName} — webhook is working`);
+        return;
+      }
+
+      const event = await parseGitHubWebhook(githubEvent, payload, { noFilterSelf });
       if (!event) return;
       if (issueFilter && event.issueKey !== issueFilter) return;
 

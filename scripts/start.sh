@@ -247,6 +247,7 @@ if [ -f projects.yaml ] && command -v node >/dev/null 2>&1; then
   # Parse projects.yaml and validate each project
   node -e "
     const fs = require('fs');
+    const path = require('path');
     const yaml = require('yaml');
     const { execSync } = require('child_process');
     const parsed = yaml.parse(fs.readFileSync('projects.yaml', 'utf-8'));
@@ -262,25 +263,47 @@ if [ -f projects.yaml ] && command -v node >/dev/null 2>&1; then
         console.log('FAIL:' + key + ' — localRepoPath not found: ' + (p.localRepoPath || '(empty)'));
         continue;
       }
-      if (!fs.existsSync(p.localRepoPath + '/.git')) {
-        console.log('FAIL:' + key + ' — ' + p.localRepoPath + ' is not a git repo');
+
+      // Normalize repos: support both single-repo and multi-repo formats
+      const repos = p.repos && p.repos.length > 0
+        ? p.repos
+        : p.github && p.upstreamBranch
+          ? [{ name: p.github.repo, github: p.github, path: '.', upstreamBranch: p.upstreamBranch }]
+          : [];
+
+      if (repos.length === 0) {
+        console.log('FAIL:' + key + ' — no repos configured (need github/upstreamBranch or repos[])');
         continue;
       }
-      // Check GitHub repo accessible
-      try {
-        execSync('gh repo view ' + p.github.owner + '/' + p.github.repo + ' --json name', { stdio: 'pipe', timeout: 10000 });
-      } catch {
-        console.log('FAIL:' + key + ' — cannot access GitHub repo ' + p.github.owner + '/' + p.github.repo);
-        continue;
+
+      let projectOk = true;
+      for (const repo of repos) {
+        const repoPath = path.resolve(p.localRepoPath, repo.path);
+        const label = repos.length > 1 ? key + '/' + repo.name : key;
+
+        if (!fs.existsSync(repoPath + '/.git')) {
+          console.log('FAIL:' + label + ' — ' + repoPath + ' is not a git repo');
+          projectOk = false;
+          continue;
+        }
+        // Check GitHub repo accessible
+        try {
+          execSync('gh repo view ' + repo.github.owner + '/' + repo.github.repo + ' --json name', { stdio: 'pipe', timeout: 10000 });
+        } catch {
+          console.log('FAIL:' + label + ' — cannot access GitHub repo ' + repo.github.owner + '/' + repo.github.repo);
+          projectOk = false;
+          continue;
+        }
+        // Check upstream branch exists
+        try {
+          execSync('git -C \"' + repoPath + '\" rev-parse --verify origin/' + repo.upstreamBranch, { stdio: 'pipe', timeout: 10000 });
+        } catch {
+          console.log('FAIL:' + label + ' — upstream branch origin/' + repo.upstreamBranch + ' not found (try: git -C ' + repoPath + ' fetch origin)');
+          projectOk = false;
+          continue;
+        }
+        console.log('OK:' + label + ' — ' + repo.github.owner + '/' + repo.github.repo + ' (' + repo.upstreamBranch + ')');
       }
-      // Check upstream branch exists
-      try {
-        execSync('git -C \"' + p.localRepoPath + '\" rev-parse --verify origin/' + p.upstreamBranch, { stdio: 'pipe', timeout: 10000 });
-      } catch {
-        console.log('FAIL:' + key + ' — upstream branch origin/' + p.upstreamBranch + ' not found (try: git -C ' + p.localRepoPath + ' fetch origin)');
-        continue;
-      }
-      console.log('OK:' + key + ' — ' + p.github.owner + '/' + p.github.repo + ' (' + p.upstreamBranch + ')');
     }
   " 2>/dev/null | while IFS=: read -r status msg; do
     if [ "$status" = "OK" ]; then

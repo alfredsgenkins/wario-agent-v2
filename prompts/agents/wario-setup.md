@@ -115,9 +115,16 @@ git -C /path branch -r | grep -E "origin/(main|master|production|develop)" | hea
 # JIRA project key from branch names
 git -C /path branch -r | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | sed 's/-[0-9]*//' | sort -u | head -5
 # feature/PROJ-42 → suggests "PROJ"
+
+# Check for nested git repos (submodules or embedded repos)
+find /path -maxdepth 2 -name .git -not -path '/path/.git' 2>/dev/null
 ```
 
-**Step 3: GitHub repository** — Present the discovered owner/repo. Ask: "I found the remote points to `owner/repo` — is that correct?"
+**Step 3: Check for multiple repos** — If nested `.git` directories were found, or the user mentions multiple repos, ask: "Does this project have multiple repositories? (e.g. a main app with a nested repo inside)"
+
+If yes, collect info for **each repo** (steps 3a-3c). If no, collect once for the single repo.
+
+**Step 3a: GitHub repository** (per repo) — Present the discovered owner/repo. Ask: "I found the remote points to `owner/repo` — is that correct?"
 - Validate: `gh repo view owner/repo --json name`
 - **If the user can't admin the repo** (no webhook access, or repo is on Bitbucket/GitLab):
   1. Explain: "You don't have admin access to this repo (or it's not on GitHub). I can create a private mirror under your GitHub account that Wario will use instead."
@@ -128,25 +135,30 @@ git -C /path branch -r | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | sed 's/-[0-9]*//' | 
   3. Update the project config to use the mirror's owner/repo
   4. Remind them to push the upstream branch: `git push wario <branch>`
 
-**Step 4: Upstream branch** — Present discovered candidates. Ask: "Which branch should Wario base PRs on?"
+**Step 3b: Upstream branch** (per repo) — Present discovered candidates. Ask: "Which branch should Wario base PRs on?"
 - Validate: `git -C /path rev-parse --verify origin/<branch>`
 - If not found, run `git -C /path fetch origin` and retry
 
-**Step 5: JIRA project key** — Present any keys found in branch names. Ask: "What's the JIRA project key? (the prefix in issue keys like `PROJ-42`)"
+**Step 3c: Repo name** (per repo, multi-repo only) — Ask: "Short name for this repo? (e.g. 'oms', 'm2')"
+- Also determine the `path` relative to localRepoPath (e.g. `"."` for root, `"./real-melrose"` for nested)
+
+**Step 4: JIRA project key** — Present any keys found in branch names. Ask: "What's the JIRA project key? (the prefix in issue keys like `PROJ-42`)"
 - Validate via JIRA API:
   ```bash
   curl -s -u "EMAIL:TOKEN" "https://BASEURL/rest/api/3/project/PROJ"
   ```
 
-**Step 6: Instructions** (optional) — Ask: "Any project-specific instructions for Wario? (build/test commands, special notes — or skip)"
+**Step 5: Instructions** (optional) — Ask: "Any project-specific instructions for Wario? (build/test commands, special notes — or skip)"
 - Check for README, package.json, or Makefile in the repo to suggest commands
+- For multi-repo projects, suggest instructions that explain which repo is for what
 
-**Step 7: Budget** (optional) — Ask: "Max Claude API budget per session in USD? (default: 5.00)"
+**Step 6: Budget** (optional) — Ask: "Max Claude API budget per session in USD? (default: 5.00)"
 
 ### Write projects.yaml
 
-After collecting all values, write to `projects.yaml`:
+After collecting all values, write to `projects.yaml`.
 
+**Single-repo format** (one repo per project):
 ```yaml
 projects:
   - jiraProjectKey: "PROJ"
@@ -158,6 +170,30 @@ projects:
     instructions: |
       User-provided instructions here.
     maxBudgetUsd: 5.00
+```
+
+**Multi-repo format** (multiple repos under one JIRA project):
+```yaml
+projects:
+  - jiraProjectKey: "MEL"
+    localRepoPath: "/absolute/path/to/primary-repo"
+    repos:
+      - name: "oms"
+        github:
+          owner: "owner"
+          repo: "melrose-oms"
+        path: "."
+        upstreamBranch: "main"
+      - name: "m2"
+        github:
+          owner: "owner"
+          repo: "real-melrose"
+        path: "./real-melrose"
+        upstreamBranch: "prod-lcd"
+    instructions: |
+      Two repos: OMS (Node) at root, M2 (Magento) at ./real-melrose/.
+      Each has its own git. Commit and PR separately.
+    maxBudgetUsd: 10.00
 ```
 
 Ask: "Do you want to add another project, or is this it?"
@@ -211,8 +247,79 @@ For **each project** in `projects.yaml`:
 
 **Notes:**
 - This is a per-repo webhook, not a GitHub App.
-- GitHub sends a ping to verify the URL. If ngrok isn't running yet, the ping fails but it'll work later.
+- GitHub sends a ping to verify the URL — we'll verify it in the next phase.
 - The user needs write/admin access to add webhooks. If using a private mirror (from Phase 2), they already have this.
+
+---
+
+## Phase 3.5: Webhook verification
+
+After webhooks are configured, verify they actually work by receiving real webhook deliveries end-to-end.
+
+### Step 1: Start the test server and ngrok
+
+The test server is a lightweight listener that records incoming webhooks without processing them.
+
+```bash
+# Start ngrok if not already running
+if ! curl -s http://127.0.0.1:4040/api/tunnels >/dev/null 2>&1; then
+  ngrok http 8788 --url="$NGROK_BASE_URL" --log=stdout --log-level=warn > /tmp/ngrok-wario-test.log 2>&1 &
+  sleep 2
+fi
+
+# Start test server in background (auto-exits after 120s)
+npx tsx scripts/test-webhooks.ts &
+TEST_PID=$!
+sleep 1
+```
+
+Verify both are up:
+```bash
+curl -s http://127.0.0.1:8788/health
+```
+
+### Step 2: Test GitHub webhook
+
+Ask the user: "Go to the GitHub webhook settings for each repo and click **Redeliver** on the most recent delivery (usually a `ping` event). Or, if you just created the webhook, it should have already sent a ping."
+
+- For each repo, provide the direct URL: `https://github.com/<owner>/<repo>/settings/hooks`
+
+Then check:
+```bash
+curl -s http://127.0.0.1:8788/status
+```
+
+If `github` is still null:
+- Ask the user what response code GitHub shows in the delivery log
+- **200**: webhook reached us but we didn't record it — check the payload URL path is `/webhooks/github`
+- **401**: signature mismatch — the secret in GitHub doesn't match `GITHUB_WEBHOOK_SECRET` in `.env`
+- **Connection failed / timeout**: ngrok isn't tunneling — check `curl -s http://127.0.0.1:4040/api/tunnels` and verify the URL matches
+
+### Step 3: Test JIRA webhook
+
+Ask the user: "Please make any small edit to a JIRA issue (e.g. add or remove a label, edit the description) to trigger the webhook."
+
+Then check:
+```bash
+curl -s http://127.0.0.1:8788/status
+```
+
+If `jira` is still null:
+- Ask the user to check JIRA webhook delivery logs: Settings → Webhooks → click the webhook → Recent Deliveries
+- Verify the URL matches `<NGROK_BASE_URL>/webhooks/jira-webhook`
+- If JIRA shows no deliveries at all, the webhook events may not match — ensure Issue created, Issue updated, and Comment created are checked
+
+### Step 4: Confirm and clean up
+
+Once both show received events:
+```bash
+# Stop the test server
+kill $TEST_PID 2>/dev/null
+# Stop ngrok if we started it (start.sh will start its own)
+pkill -f "ngrok http 8788" 2>/dev/null || true
+```
+
+Tell the user: "Both webhooks are verified — JIRA and GitHub events are reaching Wario end-to-end."
 
 ---
 

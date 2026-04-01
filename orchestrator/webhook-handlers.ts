@@ -14,7 +14,7 @@ function isWarioUser(accountId?: string): boolean {
 }
 
 /** Parse a JIRA webhook payload into a WebhookEvent (or null to skip) */
-export function parseJiraWebhook(payload: any): WebhookEvent | null {
+export function parseJiraWebhook(payload: any, { noFilterSelf = false } = {}): WebhookEvent | null {
   const event = payload.webhookEvent;
   const issue = payload.issue;
   if (!issue?.key) return null;
@@ -28,8 +28,8 @@ export function parseJiraWebhook(payload: any): WebhookEvent | null {
 
   if (event === "comment_created") {
     const commentAuthorId = payload.comment?.author?.accountId;
-    // Ignore our own comments
-    if (isWarioUser(commentAuthorId)) return null;
+    // Ignore our own comments (unless --no-filter-self)
+    if (!noFilterSelf && isWarioUser(commentAuthorId)) return null;
 
     const body = extractTextFromAdf(payload.comment?.body);
     return {
@@ -43,7 +43,7 @@ export function parseJiraWebhook(payload: any): WebhookEvent | null {
 
   // Any other event — treat as assignment/new work
   // Skip events triggered by Wario itself (e.g. status transitions)
-  if (isWarioUser(payload.user?.accountId)) return null;
+  if (!noFilterSelf && isWarioUser(payload.user?.accountId)) return null;
 
   const summary = issue.fields?.summary || "N/A";
   return {
@@ -80,7 +80,8 @@ export function verifyGitHubSignature(
 /** Parse a GitHub webhook payload into a WebhookEvent (or null to skip) */
 export async function parseGitHubWebhook(
   githubEvent: string,
-  payload: any
+  payload: any,
+  { noFilterSelf = false } = {}
 ): Promise<WebhookEvent | null> {
   // issue_comment events store PR info differently — resolve it first
   let pr = payload.pull_request;
@@ -106,7 +107,7 @@ export async function parseGitHubWebhook(
   if (githubEvent === "pull_request_review") {
     const review = payload.review;
     if (!review) return null;
-    if (WARIO_GITHUB_LOGIN && review.user?.login === WARIO_GITHUB_LOGIN) return null;
+    if (!noFilterSelf && WARIO_GITHUB_LOGIN && review.user?.login === WARIO_GITHUB_LOGIN) return null;
 
     return {
       source: "github",
@@ -120,7 +121,7 @@ export async function parseGitHubWebhook(
   if (githubEvent === "pull_request_review_comment") {
     const comment = payload.comment;
     if (!comment) return null;
-    if (WARIO_GITHUB_LOGIN && comment.user?.login === WARIO_GITHUB_LOGIN) return null;
+    if (!noFilterSelf && WARIO_GITHUB_LOGIN && comment.user?.login === WARIO_GITHUB_LOGIN) return null;
 
     return {
       source: "github",
@@ -134,7 +135,7 @@ export async function parseGitHubWebhook(
   if (githubEvent === "issue_comment") {
     const comment = payload.comment;
     if (!comment) return null;
-    if (WARIO_GITHUB_LOGIN && comment.user?.login === WARIO_GITHUB_LOGIN) return null;
+    if (!noFilterSelf && WARIO_GITHUB_LOGIN && comment.user?.login === WARIO_GITHUB_LOGIN) return null;
 
     return {
       source: "github",
