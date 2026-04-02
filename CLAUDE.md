@@ -44,8 +44,9 @@ Defined in `prompts/agents/` and passed via `--agents` flag:
 
 | Agent | Purpose |
 |-------|---------|
-| `wario-mapper` | Maps codebase structure/conventions, writes `codebase-maps/{projectKey}.md` |
+| `wario-coder` | Researches, plans, implements, commits. Reports DONE/BLOCKED. Never touches JIRA or PRs. |
 | `wario-qa` | Ruthless QA — proves features work with real data or reports exactly why it can't |
+| `wario-mapper` | Maps codebase structure/conventions, writes `codebase-maps/{projectKey}.md` |
 | `wario-env-starter` | Starts dev environment in background. Reports READY/FAILED with discovered URLs |
 
 ## Key Files

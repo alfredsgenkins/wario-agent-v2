@@ -75,9 +75,10 @@ function buildMcpConfig(): string {
 function buildAgentsJson(): string {
   const agents: Record<string, { description: string; prompt: string }> = {};
   const agentFiles = [
+    { name: "wario-coder", file: "wario-coder.md", description: "Researches, plans, implements, and commits code. Reports DONE or BLOCKED." },
+    { name: "wario-qa", file: "wario-qa.md", description: "Ruthless QA — proves features work with real data or reports exactly why it can't" },
     { name: "wario-mapper", file: "wario-mapper.md", description: "Maps a codebase structure and conventions" },
     { name: "wario-env-starter", file: "wario-env-starter.md", description: "Starts the project dev environment in the background" },
-    { name: "wario-qa", file: "wario-qa.md", description: "Ruthless QA — proves features work with real data or reports exactly why it can't" },
   ];
   for (const agent of agentFiles) {
     const filePath = path.join(AGENTS_DIR, agent.file);
