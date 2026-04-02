@@ -29,7 +29,7 @@ export interface ProjectConfig {
   localRepoPath: string;
   instructions?: string;
   maxBudgetUsd?: number;
-  maxIterations?: number; // max self-iteration loops per task (default: 3)
+  maxIterations?: number; // forced iteration passes per task (default: 3, max recommended: 5)
   validation?: ValidationConfig;
 
   // Multi-repo (preferred)

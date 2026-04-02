@@ -164,17 +164,18 @@ If clean → Phase 8.
 
 <turn_result>
 
-Before exiting, write `{Wario root}/task-state/{issueKey}/turn-result.json`:
+The orchestrator forces multiple iteration passes — you don't decide when to stop. After each turn, the orchestrator will re-spawn you with fresh context for another review pass, up to the configured limit.
+
+Before exiting each turn, write `{Wario root}/task-state/{issueKey}/turn-result.json`:
 
 ```json
-{ "status": "done|blocked|iterate", "phase": "Phase N", "message": "brief reason" }
+{ "status": "done|blocked", "phase": "Phase N", "message": "brief summary of what you did this turn" }
 ```
 
-- **`done`** — PR opened, JIRA transitioned. Finished.
-- **`blocked`** — Posted to JIRA, waiting for response. Include what you need in `message`.
-- **`iterate`** — Made progress but want another pass (self-review found issues, validation needs re-run). The orchestrator will re-spawn you with a fresh context. Include which phase to resume from.
+- **`done`** — You completed your work for this turn (implementation, review, fixes, etc.)
+- **`blocked`** — You need external input (credentials, assets, clarification). Posted to JIRA. This is the ONLY way to stop the iteration loop early.
 
-If you don't write this file, the orchestrator assumes done.
+The orchestrator handles iteration count and re-spawning. You just do your best work each turn.
 
 </turn_result>
 

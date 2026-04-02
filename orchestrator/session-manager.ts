@@ -131,6 +131,52 @@ function issueKeyToUUID(issueKey: string): string {
   );
 }
 
+/** Build the prompt for a forced iteration turn */
+function buildIterationPrompt(iteration: number, max: number, prevStatus: string, prevPhase: string, issueKey: string): string {
+  const taskStateDir = `task-state/${issueKey}`;
+
+  if (iteration === 1) {
+    // Second pass (iteration 0 was the first implementation pass)
+    return [
+      `Iteration ${iteration}/${max}. You just finished your first pass. Now review your own work with fresh eyes.`,
+      ``,
+      `1. Read your validation contract at ${taskStateDir}/validation-contract.md`,
+      `2. Read your diff: git diff {upstreamBranch}...HEAD`,
+      `3. CRITICAL: Does your validation contract test the ACTUAL FEATURE BEHAVIOR? If every item is a compilation/syntax/config check, your contract is garbage — rewrite it with functional tests that prove the feature works.`,
+      `4. Run the functional tests. Did you actually exercise the feature with real data? If not, do it now.`,
+      `5. Fix any issues you find, commit, and push.`,
+      ``,
+      `Write turn-result.json when done. "blocked" if you need external input. Otherwise the orchestrator will keep iterating.`,
+    ].join("\n");
+  }
+
+  if (iteration >= max - 1) {
+    // Final iteration — wrap up
+    return [
+      `Iteration ${iteration}/${max} (FINAL). Last chance to catch issues before this ships.`,
+      ``,
+      `1. Read git diff one more time. Check for hollow implementations, orphaned artifacts, missing acceptance criteria.`,
+      `2. Verify your validation contract items still pass.`,
+      `3. If you haven't opened a PR yet, do it now (Phase 8).`,
+      `4. If the PR is already open, verify it's correct and the description is accurate.`,
+      ``,
+      `Write turn-result.json when done.`,
+    ].join("\n");
+  }
+
+  // Middle iterations
+  return [
+    `Iteration ${iteration}/${max}. Continue improving your work.`,
+    ``,
+    `1. Read ${taskStateDir}/turn-result.json for where you left off${prevPhase ? ` (${prevPhase})` : ""}.`,
+    `2. Check git status and your validation contract.`,
+    `3. Run validation tests — did they actually prove the feature works?`,
+    `4. Fix issues, commit, push.`,
+    ``,
+    `Write turn-result.json when done. "blocked" if you need external input.`,
+  ].join("\n");
+}
+
 /** Check if a human chat lock file exists for this issue */
 function isHumanChatLocked(issueKey: string): boolean {
   return fs.existsSync(path.join(ROOT, `.human-chat-${issueKey}`));
@@ -367,34 +413,47 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
       });
     }
 
-    // Check turn-result for self-iteration requests
+    // Forced iteration loop: always re-spawn unless blocked or iteration limit reached.
+    // The agent doesn't decide when to stop — the orchestrator does.
     const turnResultPath = path.join(ROOT, "task-state", issueKey, "turn-result.json");
     const maxIterations = project.maxIterations ?? 3;
-    if (!budgetExhausted && fs.existsSync(turnResultPath)) {
+    const iterCount = managed.iterationCount ?? 0;
+
+    // Read turn-result if it exists (agent may signal blocked)
+    let turnStatus = "done";
+    let turnMessage = "";
+    let turnPhase = "";
+    if (fs.existsSync(turnResultPath)) {
       try {
         const turnResult = JSON.parse(fs.readFileSync(turnResultPath, "utf-8"));
-        const iterCount = managed.iterationCount ?? 0;
-
-        if (turnResult.status === "iterate" && iterCount < maxIterations) {
-          managed.iterationCount = iterCount + 1;
-          log(issueKey, `Self-iteration ${managed.iterationCount}/${maxIterations}: ${turnResult.message || "agent requested another pass"}`);
-          managed.eventQueue.unshift({
-            source: "self",
-            eventType: "self_iteration",
-            issueKey,
-            projectKey: managed.projectKey,
-            message: `Iteration ${managed.iterationCount}/${maxIterations}. Continue your work — read task-state/${issueKey}/turn-result.json and task-state/${issueKey}/ for your plan and validation contract. Resume from ${turnResult.phase || "where you left off"}.`,
-          });
-        } else if (turnResult.status === "iterate") {
-          log(issueKey, `Iteration limit reached (${maxIterations}). Not re-spawning. Pick up: ./scripts/chat.sh ${issueKey}`);
-        } else if (turnResult.status === "blocked") {
-          log(issueKey, `Agent is blocked: ${turnResult.message || "waiting for input"}. Pick up: ./scripts/chat.sh ${issueKey}`);
-        } else {
-          log(issueKey, `Turn complete (status: ${turnResult.status})`);
-        }
+        turnStatus = turnResult.status || "done";
+        turnMessage = turnResult.message || "";
+        turnPhase = turnResult.phase || "";
       } catch (err: any) {
         log(issueKey, `Could not parse turn-result.json: ${err.message}`);
       }
+    }
+
+    if (!budgetExhausted && turnStatus === "blocked") {
+      // Agent is blocked — stop iterating, wait for external input
+      log(issueKey, `Agent is blocked: ${turnMessage}. Pick up: ./scripts/chat.sh ${issueKey}`);
+    } else if (!budgetExhausted && iterCount < maxIterations) {
+      // Force another iteration regardless of what the agent thinks
+      managed.iterationCount = iterCount + 1;
+      const isFirst = iterCount === 0; // first pass just completed
+      const isFinal = managed.iterationCount >= maxIterations;
+
+      log(issueKey, `Iteration ${managed.iterationCount}/${maxIterations}${isFinal ? " (final)" : ""}: ${turnStatus === "iterate" ? turnMessage || "agent requested" : "forced by orchestrator"}`);
+
+      managed.eventQueue.unshift({
+        source: "self",
+        eventType: "self_iteration",
+        issueKey,
+        projectKey: managed.projectKey,
+        message: buildIterationPrompt(managed.iterationCount, maxIterations, turnStatus, turnPhase, issueKey),
+      });
+    } else if (iterCount >= maxIterations) {
+      log(issueKey, `All ${maxIterations} iterations complete. Pick up: ./scripts/chat.sh ${issueKey}`);
     }
 
     // Process queued events for this issue first
