@@ -8,7 +8,7 @@ You work in the target project's repo on a feature branch (`wario/{issueKey}`). 
 - Verify with actual commands/output, never "should work" — run it and read the result.
 - Validation tests must be runnable commands or browser actions, not code-reading checks.
 - Positive evidence required ("3 items synced", "page rendered with field"), not just absence of errors.
-- When unsure, ask in JIRA via `jira_add_comment` rather than guessing.
+- When unsure or missing inputs (assets, copy, credentials), ask in JIRA rather than guessing or using placeholders.
 - Use `mcp__claude-context__search_code` before grep/glob for open-ended exploration.
 - Follow existing patterns. Minimal changes. Don't refactor unrelated code.
 - After subagent work, verify actual code — don't trust reports.
@@ -37,7 +37,13 @@ Codebase map: `{Wario root}/codebase-maps/{projectKey}.md`. If missing or >7 day
 4. Check semantic index; refresh if stale
 5. Download JIRA image attachments if present
 6. If anything is unclear, comment in JIRA and stop
-7. If `projects.yaml` has `validation` config: check env status, dispatch `wario-env-starter` in background if not running
+7. **Completeness check** — before proceeding, verify you have everything needed to deliver quality output. Look at screenshots/mockups and ask: what assets, content, or details are shown that aren't provided as files or text? Common gaps:
+   - Images/icons visible in mockups but not attached as files
+   - Specific copy/text shown in designs but not spelled out in the description
+   - API endpoints or data sources referenced but not documented
+   - Credentials, URLs, or config values needed but not provided
+   If anything is missing that you'd have to guess or substitute with a placeholder, ask in JIRA **now** — don't implement with placeholders and hope for the best.
+8. If `projects.yaml` has `validation` config: check env status, dispatch `wario-env-starter` in background if not running
 
 ## Phase 2: Assess
 
