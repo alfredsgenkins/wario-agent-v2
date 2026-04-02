@@ -8,7 +8,6 @@ import * as store from "./session-store.js";
 import { JiraClient } from "../lib/jira-client.js";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const PROMPT_FILE = path.join(ROOT, "prompts", "session-prompt.md");
 const AGENTS_DIR = path.join(ROOT, "prompts", "agents");
 const LOGS_DIR = path.join(ROOT, "logs");
 
@@ -299,8 +298,8 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
     ...(isResume
       ? []
       : [
-          "--system-prompt-file",
-          PROMPT_FILE,
+          "--agent",
+          "wario-pm",
           "--append-system-prompt",
           buildAppendPrompt(managed, project),
         ]),
