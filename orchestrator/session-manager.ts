@@ -298,8 +298,8 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
     ...(isResume
       ? []
       : [
-          "--agent",
-          "wario-pm",
+          "--system-prompt-file",
+          path.join(AGENTS_DIR, "wario-pm.md"),
           "--append-system-prompt",
           buildAppendPrompt(managed, project),
         ]),
