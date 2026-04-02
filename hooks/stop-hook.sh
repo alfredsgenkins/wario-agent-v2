@@ -24,6 +24,16 @@ ITERATION=$(jq -r '.iteration // 0' "$STATE_FILE")
 
 TURN_RESULT="$WARIO_ROOT/task-state/$ISSUE_KEY/turn-result.json"
 
+# Also check common misplaced paths (agent sometimes writes to wario root or cwd)
+for candidate in "$TURN_RESULT" "$WARIO_ROOT/turn-result.json" "./turn-result.json"; do
+  if [[ -f "$candidate" ]] && [[ "$candidate" != "$TURN_RESULT" ]]; then
+    # Move misplaced file to correct location
+    mkdir -p "$(dirname "$TURN_RESULT")"
+    mv "$candidate" "$TURN_RESULT"
+    break
+  fi
+done
+
 # Check if agent reported blocked
 if [[ -f "$TURN_RESULT" ]]; then
   TURN_STATUS=$(jq -r '.status // "done"' "$TURN_RESULT" 2>/dev/null || echo "done")
