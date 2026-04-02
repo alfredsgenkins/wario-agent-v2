@@ -29,6 +29,7 @@ interface ManagedSession {
   debounceTimer: NodeJS.Timeout | null;
   lastActivityAt: number;
   humanChatActive: boolean;
+  iterationCount: number;
 }
 
 const sessions = new Map<string, ManagedSession>();
@@ -75,14 +76,9 @@ function buildMcpConfig(): string {
 function buildAgentsJson(): string {
   const agents: Record<string, { description: string; prompt: string }> = {};
   const agentFiles = [
-    { name: "wario-implementer", file: "wario-implementer.md", description: "Implements one step of a development plan" },
     { name: "wario-reviewer", file: "wario-reviewer.md", description: "Reviews code changes before PR" },
     { name: "wario-mapper", file: "wario-mapper.md", description: "Maps a codebase structure and conventions" },
-    { name: "wario-validator", file: "wario-validator.md", description: "Validates changes by visually inspecting the running application via Chrome" },
     { name: "wario-env-starter", file: "wario-env-starter.md", description: "Starts the project dev environment in the background" },
-    { name: "wario-researcher", file: "wario-researcher.md", description: "Researches codebase patterns, APIs, and constraints; surfaces assumptions" },
-    { name: "wario-planner", file: "wario-planner.md", description: "Writes structured plan from research findings" },
-    { name: "wario-plan-checker", file: "wario-plan-checker.md", description: "Verifies a development plan covers all requirements and has no gaps" },
   ];
   for (const agent of agentFiles) {
     const filePath = path.join(AGENTS_DIR, agent.file);
@@ -214,6 +210,7 @@ function initSession(event: WebhookEvent, project: ProjectConfig): ManagedSessio
     debounceTimer: null,
     lastActivityAt: Date.now(),
     humanChatActive: false,
+    iterationCount: 0,
   };
 
   sessions.set(issueKey, managed);
@@ -368,6 +365,36 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
         projectKey: managed.projectKey,
         message: `Your previous session ran out of budget. You must wrap up NOW with minimal token usage:\n1. Check git status — if there are uncommitted changes, commit them\n2. If changes are committed but not pushed, push\n3. If pushed but no PR, open the PR\n4. Post a JIRA comment summarizing the current state\nDo NOT continue implementation — just finalize what exists.`,
       });
+    }
+
+    // Check turn-result for self-iteration requests
+    const turnResultPath = path.join(ROOT, "task-state", issueKey, "turn-result.json");
+    const maxIterations = project.maxIterations ?? 3;
+    if (!budgetExhausted && fs.existsSync(turnResultPath)) {
+      try {
+        const turnResult = JSON.parse(fs.readFileSync(turnResultPath, "utf-8"));
+        const iterCount = managed.iterationCount ?? 0;
+
+        if (turnResult.status === "iterate" && iterCount < maxIterations) {
+          managed.iterationCount = iterCount + 1;
+          log(issueKey, `Self-iteration ${managed.iterationCount}/${maxIterations}: ${turnResult.message || "agent requested another pass"}`);
+          managed.eventQueue.unshift({
+            source: "self",
+            eventType: "self_iteration",
+            issueKey,
+            projectKey: managed.projectKey,
+            message: `Iteration ${managed.iterationCount}/${maxIterations}. Continue your work — read task-state/${issueKey}/turn-result.json and task-state/${issueKey}/ for your plan and validation contract. Resume from ${turnResult.phase || "where you left off"}.`,
+          });
+        } else if (turnResult.status === "iterate") {
+          log(issueKey, `Iteration limit reached (${maxIterations}). Not re-spawning.`);
+        } else if (turnResult.status === "blocked") {
+          log(issueKey, `Agent is blocked: ${turnResult.message || "waiting for input"}`);
+        } else {
+          log(issueKey, `Turn complete (status: ${turnResult.status})`);
+        }
+      } catch (err: any) {
+        log(issueKey, `Could not parse turn-result.json: ${err.message}`);
+      }
     }
 
     // Process queued events for this issue first

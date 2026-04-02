@@ -29,6 +29,7 @@ export interface ProjectConfig {
   localRepoPath: string;
   instructions?: string;
   maxBudgetUsd?: number;
+  maxIterations?: number; // max self-iteration loops per task (default: 3)
   validation?: ValidationConfig;
 
   // Multi-repo (preferred)
@@ -54,7 +55,7 @@ export interface SessionRecord {
 }
 
 export interface WebhookEvent {
-  source: "jira" | "github" | "human";
+  source: "jira" | "github" | "human" | "self";
   eventType: string;
   issueKey: string;
   projectKey: string;
