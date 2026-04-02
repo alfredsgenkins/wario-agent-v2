@@ -79,6 +79,7 @@ function buildAgentsJson(): string {
     { name: "wario-reviewer", file: "wario-reviewer.md", description: "Reviews code changes before PR" },
     { name: "wario-mapper", file: "wario-mapper.md", description: "Maps a codebase structure and conventions" },
     { name: "wario-env-starter", file: "wario-env-starter.md", description: "Starts the project dev environment in the background" },
+    { name: "wario-qa", file: "wario-qa.md", description: "Ruthless QA — proves features work with real data or reports exactly why it can't" },
   ];
   for (const agent of agentFiles) {
     const filePath = path.join(AGENTS_DIR, agent.file);

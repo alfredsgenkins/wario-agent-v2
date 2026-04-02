@@ -43,6 +43,7 @@ Defined in `prompts/agents/` and passed via `--agents` flag:
 |-------|---------|
 | `wario-mapper` | Maps codebase structure/conventions, writes `codebase-maps/{projectKey}.md` |
 | `wario-reviewer` | Reviews diff before PR. Categorizes findings as CRITICAL/IMPORTANT/MINOR |
+| `wario-qa` | Ruthless QA — proves features work with real data or reports exactly why it can't |
 | `wario-env-starter` | Starts dev environment in background. Reports READY/FAILED with discovered URLs |
 
 ## Key Files

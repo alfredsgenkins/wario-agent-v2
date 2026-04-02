@@ -118,13 +118,17 @@ If you dispatched `wario-env-starter` in Phase 1, check its result now. If FAILE
 
 **First, re-read your validation contract.** If every item is a compilation/syntax/config check and none test the actual feature behavior — your contract is broken. Fix it NOW before running it. Ask yourself: "if all these pass, does that prove the feature works?" If the answer is no, add the missing functional tests.
 
-Run every validation contract item. For each: execute the test, check result against "pass if." **Validate by running commands and using the browser — not by reading source code.** If you catch yourself using Read or Grep to validate a contract item, stop — that's code review, not QA. You have browser access (Playwright MCP) for UI validation.
+**Dispatch `wario-qa` agent** with:
+- The issue summary and acceptance criteria
+- Your validation contract (from `{Wario root}/task-state/{issueKey}/validation-contract.md`)
+- Environment info from `projects.yaml` validation config (if present): type, status command, admin URI, credentials
 
-- All pass → Phase 6
-- Failures → fix, commit, re-validate (max 3 rounds)
-- Cannot validate (env down, external service) → note in JIRA, proceed with caveat
+The QA agent is a separate personality that doesn't trust your code. It will try to actually run the feature, check real data, and report what works and what doesn't. **Do NOT do validation yourself — the QA agent does it.**
 
-An empty success is not success. "No errors" with 0 items processed proves nothing.
+Handle the QA result:
+- **VALIDATED** → Phase 6
+- **ISSUES** → fix the failures, commit, re-dispatch QA (max 3 rounds)
+- **BLOCKED** → the QA agent reports exactly what's missing. If it's something you can fix (env not started, config not set), fix it and re-dispatch. If it needs external input (credentials, access, test data), write turn result `blocked` with the QA agent's blocker details and post to JIRA.
 
 ## Phase 6: Review
 
