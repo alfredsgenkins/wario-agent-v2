@@ -47,61 +47,64 @@ fi
 jq --argjson n "$NEXT" '.iteration = $n' "$STATE_FILE" > "${STATE_FILE}.tmp"
 mv "${STATE_FILE}.tmp" "$STATE_FILE"
 
-# Build iteration-specific prompt
-CHECKLIST="Answer each question honestly. If the answer is NO, fix it before continuing.
+# --- Build iteration-specific prompt for the PM ---
 
-## Functionality
-- Did you actually RUN the feature you built (not just compile it)? If the task was to sync data, did you run the sync? If it was to add a UI field, did you open the page?
-- Did real data flow through your code? Not zero items, not empty responses — actual data processed, actual output visible.
-- Can you point to specific evidence (DB rows, command output, screenshot) that proves each acceptance criterion is met?
+read -r -d '' CHECKLIST << 'CHECKLIST_EOF' || true
+Review your coordination so far. Answer honestly:
+
+## QA Results
+- Did QA actually run the feature (not just compilation checks)?
+- Does QA have positive evidence (DB rows, real output, screenshots) — or just "no errors"?
+- If QA reported BLOCKED — did you try to unblock it before accepting? (start env, set config, find test data)
+- If QA reported ISSUES — did you send them to the coder with specific details?
 
 ## Completeness
-- Re-read the JIRA issue. Is every acceptance criterion implemented? Is anything missing or half-done?
-- Are there placeholders, TODOs, hardcoded values, or empty handlers in your code?
-- Are new files/components actually wired in (imported, registered, called) — or do they exist but nothing uses them?
+- Re-read the JIRA issue. Is every acceptance criterion covered by QA evidence?
+- Did the coder implement everything, or are there gaps, stubs, or TODOs?
 
-## Reporting
-- If something doesn't work or you can't test it — did you post to JIRA explaining exactly what's blocked and what a human needs to provide?
-- If QA found issues — did you understand the root cause (not just retry)?
-
-## Code Quality
-- Read the diff. Is there dead code, unused imports, scope creep, or over-engineering beyond what was asked?
-- Does your code follow the project's existing patterns, or did you introduce new ones where existing patterns work?
-- Can any of it be simplified without changing behavior? Reduce nesting, consolidate logic, remove unnecessary abstractions."
+## JIRA Status
+- If the core feature can't be tested — did you post the blocker to JIRA with exactly what a human needs to provide?
+- Is the JIRA ticket in the right status? ("In Review" if shipping, "PM Action" if blocked)
+CHECKLIST_EOF
 
 if [[ $NEXT -eq 1 ]]; then
-  # After first implementation — assume everything is broken
-  PROMPT="Iteration $NEXT/$MAX_ITERATIONS. Your implementation is not verified yet. Assume it doesn't work until you prove otherwise.
+  read -r -d '' PROMPT << PROMPT_EOF || true
+Iteration $NEXT/$MAX_ITERATIONS. The coder finished their first pass. Now verify the work is real.
 
-Your task was described in the JIRA issue. Re-read it now. Then ask yourself: did you actually DO the thing it asked for, or did you just write code that should theoretically do it?
+1. Dispatch wario-qa to test the actual feature — not compilation, not config checks. The real feature with real data.
+2. If QA reports VALIDATED with evidence → review the diff yourself (Phase 4), then finalize.
+3. If QA reports ISSUES → send the failures to the coder to fix, then re-dispatch QA.
+4. If QA reports BLOCKED → can you help unblock? (start env, set config, find test data). If it truly needs something external, write turn-result.json "blocked" and post to JIRA.
 
-If your validation contract only has compilation/syntax/config checks — rewrite it. You need tests that prove the feature works with real data.
+$CHECKLIST
+PROMPT_EOF
 
-Dispatch wario-qa with the contract. If QA reports BLOCKED, try to unblock it yourself (check configs, start the env, find test data). Only report \"blocked\" if you truly need something external.
+elif [[ $NEXT -ge $MAX_ITERATIONS ]]; then
+  read -r -d '' PROMPT << PROMPT_EOF || true
+Iteration $NEXT/$MAX_ITERATIONS (FINAL). Make a decision now.
 
-$CHECKLIST"
+If QA validated the core feature with positive evidence:
+→ Open the PR (Phase 5). Include QA evidence in the PR body. Transition JIRA to "In Review". Write turn-result.json "done".
 
-elif [[ $NEXT -ge $((MAX_ITERATIONS)) ]]; then
-  # Final iteration — ship or block, no middle ground
-  PROMPT="Iteration $NEXT/$MAX_ITERATIONS (FINAL). Ship it or block it. No middle ground.
+If QA could NOT validate the core feature:
+→ Do NOT open a PR. Post the blocker to JIRA with exactly what a human needs to provide. Transition to "PM Action". Write turn-result.json "blocked".
 
-If QA validated the core feature with real evidence — open a PR (if not already open), make sure it's pushed with latest fixes, and the description honestly lists what was validated and what wasn't.
-
-If QA could NOT validate the core feature — do NOT open a PR pretending it works. Write turn-result.json \"blocked\", post the blocker to JIRA with exactly what a human needs to provide.
-
-$CHECKLIST"
+$CHECKLIST
+PROMPT_EOF
 
 else
-  # Middle iterations — act on QA results + improve
-  PROMPT="Iteration $NEXT/$MAX_ITERATIONS. Read the QA results from your last wario-qa dispatch.
+  read -r -d '' PROMPT << PROMPT_EOF || true
+Iteration $NEXT/$MAX_ITERATIONS. Check the results and act.
 
-For each FAIL: understand WHY it failed (read what QA tried, what happened). Fix the root cause, don't just retry.
-For each BLOCKED: can you unblock it? Check env, credentials, test data. Try to make the test runnable, then re-dispatch wario-qa.
-If all passed: is the evidence real? 'Processed: 0 items' is not a pass. 'No errors' is not a pass.
+Read the QA report from last iteration:
+- FAIL items: send specific failure details to the coder. When coder fixes, re-dispatch QA.
+- BLOCKED items: can you unblock? Check env, credentials, test data. If unblockable, re-dispatch QA. If truly external, write turn-result.json "blocked" and post to JIRA.
+- PASS items: is the evidence real? "No errors" with zero data processed is not a pass. Ask QA to re-test with better criteria.
 
-Commit and push fixes. If you need something external, write turn-result.json \"blocked\" and post to JIRA.
+Also read the diff (git diff). Any hollow implementations the coder missed? Send them back.
 
-$CHECKLIST"
+$CHECKLIST
+PROMPT_EOF
 fi
 
 # Block exit and re-feed the iteration prompt
