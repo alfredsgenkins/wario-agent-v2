@@ -15,7 +15,7 @@ const LOGS_DIR = path.join(ROOT, "logs");
 fs.mkdirSync(LOGS_DIR, { recursive: true });
 
 const DEBOUNCE_MS = 4000;
-const STUCK_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes with no output = stuck
+const STUCK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — subagents (QA, coder) can run long without PM output
 
 interface ManagedSession {
   issueKey: string;
