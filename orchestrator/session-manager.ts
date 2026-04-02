@@ -649,7 +649,19 @@ export function startHealthCheck(): void {
       // Stuck process: alive but no output for too long
       const idleMs = now - managed.lastActivityAt;
       if (idleMs > STUCK_TIMEOUT_MS) {
-        log(key, `Stuck process detected (no output for ${Math.round(idleMs / 60_000)}min), killing`);
+        // Check if the process has children (subagents running) — if so, it's not stuck
+        try {
+          const children = execSync(`pgrep -P ${managed.process.pid}`, {
+            encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"],
+          }).trim();
+          if (children.length > 0) {
+            log(key, `No output for ${Math.round(idleMs / 60_000)}min but subagent is running (${children.split("\n").length} child process(es)). Not killing.`);
+            continue;
+          }
+        } catch {
+          // pgrep returns non-zero if no children — that means truly stuck
+        }
+        log(key, `Stuck process detected (no output for ${Math.round(idleMs / 60_000)}min, no child processes), killing`);
         managed.process.kill();
         managed.process = null;
         managed.status = "idle";
