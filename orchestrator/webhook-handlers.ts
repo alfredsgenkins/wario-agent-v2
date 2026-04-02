@@ -114,7 +114,7 @@ export async function parseGitHubWebhook(
       eventType: "pr_review",
       issueKey,
       projectKey,
-      message: `PR review on #${prNumber} (${issueKey}) by ${review.user?.login}.\nState: ${review.state}\n\n${review.body || "(no body)"}\n\nAddress the review feedback: cd to the worktree, make changes, commit, and push. Then post a summary comment on the PR explaining what you changed.`,
+      message: `PR review on #${prNumber} (${issueKey}) by ${review.user?.login}.\nState: ${review.state}\n\n${review.body || "(no body)"}\n\nAddress the review feedback: make the requested changes, commit, and push. Then post a summary comment on the PR explaining what you changed.`,
     };
   }
 

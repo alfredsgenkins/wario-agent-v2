@@ -6,7 +6,7 @@ AI developer agent that receives JIRA assignments and implements them autonomous
 
 1. JIRA assigns an issue to Wario
 2. A webhook fires to the orchestrator
-3. The orchestrator spawns a Claude Code session that reads the issue, creates a worktree, implements changes, opens a PR, and transitions the ticket to "In Review"
+3. The orchestrator spawns a Claude Code session that reads the issue, creates a feature branch, implements changes, opens a PR, and transitions the ticket to "In Review"
 
 ## Prerequisites
 
@@ -67,6 +67,7 @@ projects:
       repo: "your-repo"
     localRepoPath: "/absolute/path/to/local/clone"
     upstreamBranch: "main"
+    # prTargetBranch: "staging"  # optional — PR base branch (defaults to upstreamBranch)
     instructions: |
       Optional project-specific context for Claude.
       Build commands, testing instructions, etc.
@@ -75,7 +76,7 @@ projects:
 
 - `jiraProjectKey` must match the prefix of JIRA issue keys (e.g., `PROJ` for `PROJ-42`)
 - `localRepoPath` must be a pre-cloned git repository (absolute path)
-- Worktrees are created at `../worktrees/{ISSUE-KEY}` relative to `localRepoPath`
+- Feature branches (`wario/{ISSUE-KEY}`) are created directly in the repo at `localRepoPath`
 
 ## Usage
 
@@ -112,6 +113,5 @@ mcp/         # Vendored dependencies (claude-context, gitignored)
 scripts/        # start.sh launcher
 docs/           # Setup guide and documentation
 projects.yaml   # Maps JIRA projects to local repos
-worktrees/      # Git worktrees created per issue (gitignored)
 logs/           # Per-issue session logs (gitignored)
 ```

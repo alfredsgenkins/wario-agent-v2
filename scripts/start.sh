@@ -131,6 +131,19 @@ else
     exit 1
   fi
 fi
+
+# playwright: ensure browsers are installed for headless validation
+if npx @playwright/mcp@latest --help >/dev/null 2>&1; then
+  ok "playwright MCP"
+else
+  echo "⟳ Installing Playwright MCP..."
+  npx @playwright/mcp@latest --help >/dev/null 2>&1 || true
+fi
+if npx playwright install chromium --with-deps >/dev/null 2>&1; then
+  ok "playwright chromium browser"
+else
+  fail "playwright browser install failed" "Try: npx playwright install chromium --with-deps"
+fi
 echo ""
 
 # ── Phase 5: Environment variables ────────────────────────────────
@@ -268,7 +281,7 @@ if [ -f projects.yaml ] && command -v node >/dev/null 2>&1; then
       const repos = p.repos && p.repos.length > 0
         ? p.repos
         : p.github && p.upstreamBranch
-          ? [{ name: p.github.repo, github: p.github, path: '.', upstreamBranch: p.upstreamBranch }]
+          ? [{ name: p.github.repo, github: p.github, path: '.', upstreamBranch: p.upstreamBranch, prTargetBranch: p.prTargetBranch }]
           : [];
 
       if (repos.length === 0) {
@@ -302,7 +315,20 @@ if [ -f projects.yaml ] && command -v node >/dev/null 2>&1; then
           projectOk = false;
           continue;
         }
-        console.log('OK:' + label + ' — ' + repo.github.owner + '/' + repo.github.repo + ' (' + repo.upstreamBranch + ')');
+        // Check prTargetBranch exists (if set)
+        if (repo.prTargetBranch) {
+          try {
+            execSync('git -C \"' + repoPath + '\" rev-parse --verify origin/' + repo.prTargetBranch, { stdio: 'pipe', timeout: 10000 });
+          } catch {
+            console.log('FAIL:' + label + ' — PR target branch origin/' + repo.prTargetBranch + ' not found (try: git -C ' + repoPath + ' fetch origin)');
+            projectOk = false;
+            continue;
+          }
+        }
+        const branchInfo = repo.prTargetBranch
+          ? repo.upstreamBranch + ' → PR to ' + repo.prTargetBranch
+          : repo.upstreamBranch;
+        console.log('OK:' + label + ' — ' + repo.github.owner + '/' + repo.github.repo + ' (' + branchInfo + ')');
       }
     }
   " 2>/dev/null | while IFS=: read -r status msg; do

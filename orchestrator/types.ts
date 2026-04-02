@@ -3,6 +3,25 @@ export interface RepoConfig {
   github: { owner: string; repo: string };
   path: string; // relative to localRepoPath (e.g. "." or "./real-melrose")
   upstreamBranch: string;
+  prTargetBranch?: string; // optional — PR base branch (defaults to upstreamBranch)
+}
+
+export interface ValidationFlow {
+  name: string;
+  path: string;
+  description: string;
+}
+
+export interface ValidationConfig {
+  type: "cma" | "docker-compose" | "custom";
+  statusCommand: string;
+  startCommand: string;
+  adminUri?: string;
+  credentials?: {
+    username: string;
+    password: string;
+  };
+  commonFlows?: ValidationFlow[];
 }
 
 export interface ProjectConfig {
@@ -10,6 +29,7 @@ export interface ProjectConfig {
   localRepoPath: string;
   instructions?: string;
   maxBudgetUsd?: number;
+  validation?: ValidationConfig;
 
   // Multi-repo (preferred)
   repos?: RepoConfig[];
@@ -17,6 +37,7 @@ export interface ProjectConfig {
   // Single-repo (backward compat — normalized to repos[] at load time)
   github?: { owner: string; repo: string };
   upstreamBranch?: string;
+  prTargetBranch?: string;
 }
 
 export interface ProjectsYaml {
@@ -33,7 +54,7 @@ export interface SessionRecord {
 }
 
 export interface WebhookEvent {
-  source: "jira" | "github";
+  source: "jira" | "github" | "human";
   eventType: string;
   issueKey: string;
   projectKey: string;

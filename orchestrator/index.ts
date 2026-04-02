@@ -55,6 +55,7 @@ function normalizeProject(p: ProjectConfig): ProjectConfig {
         github: p.github,
         path: ".",
         upstreamBranch: p.upstreamBranch,
+        prTargetBranch: p.prTargetBranch,
       },
     ],
   };

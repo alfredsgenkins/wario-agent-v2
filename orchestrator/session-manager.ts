@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import type { ProjectConfig, RepoConfig, WebhookEvent } from "./types.js";
+import type { ProjectConfig, WebhookEvent } from "./types.js";
 import * as store from "./session-store.js";
 import { JiraClient } from "../lib/jira-client.js";
 
@@ -28,9 +28,15 @@ interface ManagedSession {
   eventQueue: WebhookEvent[];
   debounceTimer: NodeJS.Timeout | null;
   lastActivityAt: number;
+  humanChatActive: boolean;
 }
 
 const sessions = new Map<string, ManagedSession>();
+
+/** Tracks which project (by jiraProjectKey) currently has a running session.
+ *  Since we no longer use worktrees, only one issue per project can run at a time
+ *  to avoid branch/repo conflicts in the shared working directory. */
+const activeProjectLock = new Map<string, string>(); // projectKey -> issueKey
 
 /** Build MCP config JSON with absolute paths */
 function buildMcpConfig(): string {
@@ -54,6 +60,10 @@ function buildMcpConfig(): string {
           MILVUS_ADDRESS: "${MILVUS_ADDRESS}",
         },
       },
+      playwright: {
+        command: "npx",
+        args: ["@playwright/mcp@latest", "--headless"],
+      },
     },
   };
   const tmpPath = path.join(ROOT, "mcp-configs", ".generated-mcp.json");
@@ -68,6 +78,11 @@ function buildAgentsJson(): string {
     { name: "wario-implementer", file: "wario-implementer.md", description: "Implements one step of a development plan" },
     { name: "wario-reviewer", file: "wario-reviewer.md", description: "Reviews code changes before PR" },
     { name: "wario-mapper", file: "wario-mapper.md", description: "Maps a codebase structure and conventions" },
+    { name: "wario-validator", file: "wario-validator.md", description: "Validates changes by visually inspecting the running application via Chrome" },
+    { name: "wario-env-starter", file: "wario-env-starter.md", description: "Starts the project dev environment in the background" },
+    { name: "wario-researcher", file: "wario-researcher.md", description: "Researches codebase patterns, APIs, and constraints; surfaces assumptions" },
+    { name: "wario-planner", file: "wario-planner.md", description: "Writes structured plan from research findings" },
+    { name: "wario-plan-checker", file: "wario-plan-checker.md", description: "Verifies a development plan covers all requirements and has no gaps" },
   ];
   for (const agent of agentFiles) {
     const filePath = path.join(AGENTS_DIR, agent.file);
@@ -85,14 +100,14 @@ function buildAgentsJson(): string {
 function buildAppendPrompt(managed: ManagedSession, project: ProjectConfig): string {
   const repos = project.repos || [];
   const repoLines = repos.map((r) =>
-    `- **${r.name}**: path=\`${r.path}\`, GitHub=${r.github.owner}/${r.github.repo}, upstream=\`${r.upstreamBranch}\``
+    `- **${r.name}**: path=\`${r.path}\`, GitHub=${r.github.owner}/${r.github.repo}, upstream=\`${r.upstreamBranch}\`${r.prTargetBranch ? `, prTarget=\`${r.prTargetBranch}\`` : ""}`
   ).join("\n");
 
   return [
     `Issue: ${managed.issueKey}. Project key: ${managed.projectKey}. Wario root: ${ROOT}.`,
     repos.length === 1
-      ? `Upstream branch: ${repos[0].upstreamBranch}. GitHub: ${repos[0].github.owner}/${repos[0].github.repo}.`
-      : `This project has ${repos.length} repos:\n${repoLines}\nCreate worktrees and PRs for each repo that has changes.`,
+      ? `Upstream branch: ${repos[0].upstreamBranch}.${repos[0].prTargetBranch ? ` PR target branch: ${repos[0].prTargetBranch}.` : ""} GitHub: ${repos[0].github.owner}/${repos[0].github.repo}.`
+      : `This project has ${repos.length} repos:\n${repoLines}\nCreate branches and PRs for each repo that has changes.`,
     project.instructions || "",
   ].filter(Boolean).join("\n\n");
 }
@@ -120,6 +135,11 @@ function issueKeyToUUID(issueKey: string): string {
   );
 }
 
+/** Check if a human chat lock file exists for this issue */
+function isHumanChatLocked(issueKey: string): boolean {
+  return fs.existsSync(path.join(ROOT, `.human-chat-${issueKey}`));
+}
+
 /** Dispatch an event: start new session or send to existing one */
 export function dispatchEvent(
   event: WebhookEvent,
@@ -132,8 +152,19 @@ export function dispatchEvent(
     managed = initSession(event, project);
   }
 
-  if (managed.status === "active") {
+  // Same issue busy — queue the event
+  if (managed.status === "active" || isHumanChatLocked(issueKey)) {
+    if (isHumanChatLocked(issueKey)) managed.humanChatActive = true;
     log(issueKey, `Session busy, queueing: ${event.eventType}`);
+    managed.eventQueue.push(event);
+    return;
+  }
+
+  // Different issue in same project is active — queue until it finishes
+  // (only one issue per project can run at a time since they share a working directory)
+  const lockHolder = activeProjectLock.get(event.projectKey);
+  if (lockHolder && lockHolder !== issueKey) {
+    log(issueKey, `Received ${event.eventType} but project ${event.projectKey} is busy (${lockHolder} is active). Queued — will start when ${lockHolder} finishes.`);
     managed.eventQueue.push(event);
     return;
   }
@@ -182,6 +213,7 @@ function initSession(event: WebhookEvent, project: ProjectConfig): ManagedSessio
     eventQueue: [],
     debounceTimer: null,
     lastActivityAt: Date.now(),
+    humanChatActive: false,
   };
 
   sessions.set(issueKey, managed);
@@ -195,7 +227,7 @@ function initSession(event: WebhookEvent, project: ProjectConfig): ManagedSessio
     lastEventAt: new Date().toISOString(),
   });
 
-  log(issueKey, `New session created (${sessionId})`);
+  log(issueKey, `Session initialized (${sessionId})`);
   return managed;
 }
 
@@ -247,9 +279,26 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
     String(project.maxBudgetUsd || 5),
   ];
 
-  log(issueKey, `Running turn: ${event.eventType} (resume: ${isResume})`);
+  log(issueKey, `${isResume ? "Resuming" : "Starting new"} session: ${event.eventType}`);
+
+  // For follow-up/recovery turns, ensure the repo is on the correct branch.
+  // New assignments (isResume=false) handle branch creation in Phase 1.
+  if (isResume) {
+    const branch = `wario/${issueKey}`;
+    try {
+      execSync(`git checkout ${branch}`, {
+        cwd: project.localRepoPath, encoding: "utf-8", timeout: 10_000, stdio: ["pipe", "pipe", "pipe"],
+      });
+      log(issueKey, `Checked out ${branch}`);
+    } catch (err: any) {
+      log(issueKey, `Warning: could not checkout ${branch}: ${err.message?.split("\n")[0]}`);
+      // Continue anyway — the agent can handle this, or it may be a new session
+    }
+  }
+
   managed.status = "active";
   store.updateStatus(issueKey, "active");
+  activeProjectLock.set(managed.projectKey, issueKey);
 
   const child = spawn("claude", args, {
     cwd: project.localRepoPath,
@@ -321,11 +370,14 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
       });
     }
 
-    // Process queued events
+    // Process queued events for this issue first
     if (managed.eventQueue.length > 0) {
       const next = managed.eventQueue.shift()!;
       log(issueKey, `Processing queued event: ${next.eventType}`);
       runTurn(managed, next);
+    } else {
+      // This issue is fully idle — release project lock and drain waiting issues
+      releaseProjectLock(managed.projectKey, issueKey);
     }
   });
 
@@ -334,7 +386,26 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
     managed.process = null;
     managed.status = "idle";
     store.updateStatus(issueKey, "idle");
+    releaseProjectLock(managed.projectKey, issueKey);
   });
+}
+
+/** Release the project lock and start the next queued issue for the same project (if any) */
+function releaseProjectLock(projectKey: string, issueKey: string): void {
+  if (activeProjectLock.get(projectKey) === issueKey) {
+    activeProjectLock.delete(projectKey);
+    log(issueKey, `Finished — project ${projectKey} is now available`);
+
+    // Find the next waiting session for this project and kick it off
+    for (const [, waiting] of sessions) {
+      if (waiting.projectKey === projectKey && waiting.eventQueue.length > 0 && waiting.status === "idle") {
+        const next = waiting.eventQueue.shift()!;
+        log(waiting.issueKey, `Project ${projectKey} is now free, starting queued ${next.eventType}`);
+        runTurn(waiting, next);
+        break; // only start one
+      }
+    }
+  }
 }
 
 export function listActiveSessions(): Array<{
@@ -361,10 +432,20 @@ export function shutdown(): void {
     }
     managed.logStream.end();
   }
+  activeProjectLock.clear();
 }
 
 /** Recover sessions on startup: fix stale state + pick up missed JIRA assignments */
 export async function recoverSessions(projects: ProjectConfig[], issueFilter?: string): Promise<void> {
+  // Part 0: Clean up stale human-chat lock files
+  const staleChats = fs.readdirSync(ROOT).filter(f => f.startsWith(".human-chat-"));
+  for (const f of staleChats) {
+    fs.unlinkSync(path.join(ROOT, f));
+  }
+  if (staleChats.length > 0) {
+    console.log(`[Recovery] Cleaned up ${staleChats.length} stale human-chat lock(s)`);
+  }
+
   // Part 1: Fix stale active sessions (orchestrator just started, nothing is running)
   const allSessions = store.getAllSessions();
   let staleCount = 0;
@@ -425,24 +506,32 @@ export async function recoverSessions(projects: ProjectConfig[], issueFilter?: s
         continue;
       }
 
-      // Check if worktree exists (interrupted mid-work)
-      const worktreePath = path.join(
-        path.dirname(project.localRepoPath),
-        "worktrees",
-        issueKey
-      );
-      const hasWorktree = fs.existsSync(worktreePath);
+      // Check if branch exists (interrupted mid-work)
+      const hasBranch = (() => {
+        try {
+          return execSync(`git branch --list wario/${issueKey}`, {
+            cwd: project.localRepoPath, encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"],
+          }).trim().length > 0;
+        } catch { return false; }
+      })();
       const existingSession = store.getSession(issueKey);
 
-      if (existingSession && hasWorktree) {
+      if (existingSession && hasBranch) {
         console.log(`[Recovery] ${issueKey}: Resuming interrupted session`);
+        const planFile = path.join(ROOT, "task-state", issueKey, "plan.md");
+        const hasPlan = fs.existsSync(planFile);
+        const steps = [
+          ...(hasPlan ? [`Read your plan at ${planFile}`] : []),
+          "Check git status",
+          "Continue from where you left off — don't restart from scratch.",
+        ].map((s, i) => `${i + 1}. ${s}`).join("\n");
         dispatchEvent(
           {
             source: "jira",
             eventType: "recovery_resume",
             issueKey,
             projectKey,
-            message: `You were interrupted mid-task on ${issueKey}. Check your progress:\n1. Read the plan file at ${ROOT}/task-state/${issueKey}/plan.md if it exists\n2. Check git status in your worktree at ${worktreePath}\n3. Continue from where you left off — don't restart from scratch.`,
+            message: `You were interrupted mid-task on ${issueKey}. Check your progress:\n${steps}`,
           },
           project
         );
@@ -466,11 +555,28 @@ export async function recoverSessions(projects: ProjectConfig[], issueFilter?: s
   }
 }
 
-/** Periodic health check: detect dead and stuck child processes */
+/** Periodic health check: detect dead/stuck processes and human chat end */
 export function startHealthCheck(): void {
   setInterval(() => {
     const now = Date.now();
     for (const [key, managed] of sessions) {
+      // Detect ended human chat: lock gone but flag still set
+      if (managed.humanChatActive && !isHumanChatLocked(key) && managed.status === "idle" && !managed.process) {
+        managed.humanChatActive = false;
+        log(key, "Human chat ended, sending JIRA summary turn");
+
+        managed.eventQueue.unshift({
+          source: "human",
+          eventType: "human_chat_ended",
+          issueKey: key,
+          projectKey: managed.projectKey,
+          message: "A human just finished chatting with you directly. Post a brief JIRA comment summarizing what was discussed and any decisions made. Then continue with any remaining work.",
+        });
+        const next = managed.eventQueue.shift()!;
+        runTurn(managed, next);
+        continue;
+      }
+
       if (managed.status !== "active" || !managed.process) continue;
 
       // Dead process: exited without triggering handler
@@ -484,6 +590,8 @@ export function startHealthCheck(): void {
           const next = managed.eventQueue.shift()!;
           log(key, `Processing queued event: ${next.eventType}`);
           runTurn(managed, next);
+        } else {
+          releaseProjectLock(managed.projectKey, key);
         }
         continue;
       }
@@ -498,12 +606,19 @@ export function startHealthCheck(): void {
         store.updateStatus(key, "idle");
 
         // Queue a recovery turn
+        const stuckPlanFile = path.join(ROOT, "task-state", key, "plan.md");
+        const stuckHasPlan = fs.existsSync(stuckPlanFile);
+        const stuckSteps = [
+          ...(stuckHasPlan ? [`Read your plan at ${stuckPlanFile}`] : []),
+          "Check git status",
+          "Continue from where you left off — don't restart from scratch.",
+        ].map((s, i) => `${i + 1}. ${s}`).join("\n");
         managed.eventQueue.unshift({
           source: "jira",
           eventType: "stuck_recovery",
           issueKey: key,
           projectKey: managed.projectKey,
-          message: `Your previous session appears to have stalled. Check your progress:\n1. Read the plan file at ${ROOT}/task-state/${key}/plan.md if it exists\n2. Check git status in your worktree\n3. Continue from where you left off — don't restart from scratch.`,
+          message: `Your previous session appears to have stalled. Check your progress:\n${stuckSteps}`,
         });
 
         if (managed.eventQueue.length > 0) {
@@ -513,7 +628,7 @@ export function startHealthCheck(): void {
         }
       }
     }
-  }, 60_000);
+  }, 30_000);
 }
 
 function log(issueKey: string, message: string): void {

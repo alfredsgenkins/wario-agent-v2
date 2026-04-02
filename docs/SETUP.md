@@ -106,7 +106,8 @@ projects:
       owner: "your-github-user"               # GitHub org or user
       repo: "your-repo"                       # Repository name
     localRepoPath: "/absolute/path/to/repo"   # Pre-cloned local git repo (absolute path)
-    upstreamBranch: "main"                    # Base branch for PRs
+    upstreamBranch: "main"                    # Branch to create feature branches from
+    # prTargetBranch: "staging"               # Optional: PR base branch (defaults to upstreamBranch)
     instructions: |                           # Optional: project context for Claude sessions
       Brief description of the project.
       How to build: npm run build
@@ -117,7 +118,7 @@ projects:
 **Important notes:**
 - `jiraProjectKey` must match the prefix of issue keys. If issues are `PROJ-1`, `PROJ-2`, etc., use `"PROJ"`.
 - `localRepoPath` must already exist as a cloned git repository. Wario does not clone repos.
-- Worktrees are created at `../worktrees/{ISSUE-KEY}` relative to `localRepoPath`.
+- Feature branches (`wario/{ISSUE-KEY}`) are created directly in the repo at `localRepoPath`.
 - You can list multiple projects. Wario matches incoming webhooks to projects by the issue key prefix.
 
 ## 4. Configure Claude Code settings
