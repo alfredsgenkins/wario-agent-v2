@@ -157,7 +157,8 @@ function setupIterationHook(project: ProjectConfig, issueKey: string): string {
       }],
     },
   };
-  const settingsPath = path.join(ROOT, "mcp-configs", `.wario-settings-${issueKey}.json`);
+  // Single shared settings file (hook path is the same for all issues)
+  const settingsPath = path.join(ROOT, "mcp-configs", ".wario-settings.json");
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   return settingsPath;
 }
