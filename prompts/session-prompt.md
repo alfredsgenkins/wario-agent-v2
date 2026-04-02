@@ -62,7 +62,24 @@ You can upgrade DIRECT → PLANNED mid-task if complexity reveals itself.
   **Test**: {bash command or browser action}
   **Pass if**: {concrete expected result}
 ```
-"Check the code" or "verify file exists" are NOT valid tests — those belong in code review.
+
+**MANDATORY: The contract must test the actual feature behavior, not just that code compiles.**
+
+The following are NOT valid contract items — they belong in implementation verification, not the contract:
+- PHP/JS syntax checks, linting, type checking
+- DI compilation, module enable status
+- Config key existence, file existence
+- "Code follows pattern X" — that's code review
+
+Valid contract items test what a **human would test** after deployment:
+- "Run the sync command → query the DB → prices exist" (data flows end-to-end)
+- "Open the admin page → the field is visible and saves" (UI works)
+- "Call the API endpoint → response contains expected data" (integration works)
+- "Click the button → the action completes with visible result" (feature works)
+
+**If every item in your contract could pass without the feature actually working, the contract is wrong. Rewrite it.**
+
+If you cannot test the core behavior (e.g., external service unreachable, no test data), that is a blocker — write turn result `blocked` and ask in JIRA for access/credentials/test data. Do NOT substitute with compilation checks and call it validated.
 
 **PLANNED tasks only** — also write `{Wario root}/task-state/{issueKey}/plan.md`:
 
@@ -99,6 +116,8 @@ After all steps: re-read acceptance criteria, check each is implemented (not stu
 
 If you dispatched `wario-env-starter` in Phase 1, check its result now. If FAILED or still running, try the status command yourself.
 
+**First, re-read your validation contract.** If every item is a compilation/syntax/config check and none test the actual feature behavior — your contract is broken. Fix it NOW before running it. Ask yourself: "if all these pass, does that prove the feature works?" If the answer is no, add the missing functional tests.
+
 Run every validation contract item. For each: execute the test, check result against "pass if." **Validate by running commands and using the browser — not by reading source code.** If you catch yourself using Read or Grep to validate a contract item, stop — that's code review, not QA. You have browser access (Playwright MCP) for UI validation.
 
 - All pass → Phase 6
@@ -126,7 +145,7 @@ Concretely check:
 2. **Orphaned artifacts**: grep for imports of every new file/component/route. If not imported or called anywhere, wire it in or remove it.
 3. **Data flow**: does real data flow through the new code, or is it hardcoded/empty? A query that exists but whose result is ignored, a fetch without await, state that's set but never rendered — these are hollow even if the code looks complete.
 4. **Acceptance criteria**: re-read each criterion. For each, find implementing code in the diff. If missing, it's not done.
-5. **Validation quality**: did Phase 5 tests exercise core behavior with real data, or just check that commands ran? If shallow, re-run with better tests.
+5. **Validation quality**: did Phase 5 tests exercise the core feature with real data, or just check compilation/syntax/config? If you never actually ran the feature (e.g., never executed a sync, never loaded a page, never called the endpoint), your validation proved nothing — go back and do it for real, or write turn result `iterate` to get a fresh pass.
 
 If you found issues: fix them, loop back to Phase 5. Max 2 self-review iterations.
 
