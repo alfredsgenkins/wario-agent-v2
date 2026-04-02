@@ -386,9 +386,9 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
             message: `Iteration ${managed.iterationCount}/${maxIterations}. Continue your work — read task-state/${issueKey}/turn-result.json and task-state/${issueKey}/ for your plan and validation contract. Resume from ${turnResult.phase || "where you left off"}.`,
           });
         } else if (turnResult.status === "iterate") {
-          log(issueKey, `Iteration limit reached (${maxIterations}). Not re-spawning.`);
+          log(issueKey, `Iteration limit reached (${maxIterations}). Not re-spawning. Pick up: ./scripts/chat.sh ${issueKey}`);
         } else if (turnResult.status === "blocked") {
-          log(issueKey, `Agent is blocked: ${turnResult.message || "waiting for input"}`);
+          log(issueKey, `Agent is blocked: ${turnResult.message || "waiting for input"}. Pick up: ./scripts/chat.sh ${issueKey}`);
         } else {
           log(issueKey, `Turn complete (status: ${turnResult.status})`);
         }
@@ -404,6 +404,7 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
       runTurn(managed, next);
     } else {
       // This issue is fully idle — release project lock and drain waiting issues
+      log(issueKey, `Session idle. To pick up where the agent left off: ./scripts/chat.sh ${issueKey}`);
       releaseProjectLock(managed.projectKey, issueKey);
     }
   });
