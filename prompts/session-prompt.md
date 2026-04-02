@@ -44,25 +44,22 @@ Codebase map: `{Wario root}/codebase-maps/{projectKey}.md`. If missing or >7 day
 Dispatch `wario-coder` with:
 - The full issue description and acceptance criteria
 - The codebase map content
+- The issue key (for commit messages: `{issueKey}: description`) and branch name (`wario/{issueKey}`)
+- The task-state directory path: `{Wario root}/task-state/{issueKey}/` (for writing plan.md if PLANNED)
 - Project conventions from CLAUDE.md
 - Any project-specific instructions from the append-system-prompt
 
 The coder will research, plan (if needed), implement, verify syntax/compilation, commit, and push. It reports back DONE (with summary of what was built) or BLOCKED (with what it needs).
-
-**While the coder works**, you can also dispatch `wario-qa` early to start preparing:
-- Give QA only the JIRA issue description and acceptance criteria — NOT the code
-- Give QA the environment info (status command, admin URI, credentials)
-- QA will explore the environment, find test data, and write a test plan independently
 
 ## Phase 3: QA
 
 When the coder reports DONE:
 
 1. Read git diff to understand what was built: `git diff {upstreamBranch}...HEAD --stat`
-2. Dispatch `wario-qa` (or re-dispatch if it already ran) with:
+2. Dispatch `wario-qa` with:
    - The issue description and acceptance criteria
-   - Environment info from `projects.yaml`
-   - Instruction: "The coder says implementation is complete. Run your test plan against the actual feature."
+   - Environment info from `projects.yaml` (type, status command, admin URI, credentials, common flows)
+   - Instruction: "The coder says implementation is complete. Test the actual feature with real data."
 
 Handle the QA result:
 - **VALIDATED** → Phase 4
