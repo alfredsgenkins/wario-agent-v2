@@ -49,31 +49,38 @@ mv "${STATE_FILE}.tmp" "$STATE_FILE"
 
 # Build iteration-specific prompt
 if [[ $NEXT -eq 1 ]]; then
-  # Just finished first implementation pass → force QA
-  PROMPT="Iteration $NEXT/$MAX_ITERATIONS. You just finished your first pass. Now validate for real.
+  # After first implementation — assume everything is broken
+  PROMPT="Iteration $NEXT/$MAX_ITERATIONS. Your implementation is not verified yet. Assume it's broken until you prove otherwise.
 
-1. Re-read your validation contract. If every item is a compilation/syntax/config check, REWRITE it. You need tests that prove the feature works with real data.
-2. Dispatch wario-qa with the contract and environment info. The QA agent will try to actually run the feature.
-3. If QA finds issues, fix them. If QA reports BLOCKED, check if you can unblock it (start env, set config). If it truly needs external input, write turn-result.json with status \"blocked\" and post to JIRA.
-4. Commit and push fixes."
+Your task was described in the JIRA issue. Re-read it now. Then ask yourself: did you actually DO the thing it asked for, or did you just write code that theoretically does it?
+
+For example: if the task was 'sync prices from SAP', did you actually run the sync and check that prices appeared in the database? If the task was 'add an admin config field', did you open the admin page and see the field? If you only ran DI compilation and syntax checks, you validated nothing.
+
+1. Re-read your validation contract. If it only has compilation/syntax/config checks, it's useless. Rewrite it with tests that prove the feature works: run the command and check the output, query the database for real data, open the page in the browser.
+2. Dispatch wario-qa with the rewritten contract. The QA agent will try to actually run your feature.
+3. If QA reports BLOCKED — can you unblock it? Check configs, credentials, env status. Try before giving up.
+4. If QA reports ISSUES — fix them, commit, push.
+5. If you truly need something external (credentials, API access, test data you can't create), write turn-result.json with status \"blocked\", explain exactly what's needed, and post to JIRA."
 
 elif [[ $NEXT -ge $((MAX_ITERATIONS)) ]]; then
-  # Final iteration
-  PROMPT="Iteration $NEXT/$MAX_ITERATIONS (FINAL). Wrap up and ship.
+  # Final iteration — ship or block, no middle ground
+  PROMPT="Iteration $NEXT/$MAX_ITERATIONS (FINAL). This is your last pass. Ship it or report what's blocking you.
 
-1. Read the git diff one last time. Any hollow implementations, orphaned code, missing acceptance criteria?
-2. If no PR exists yet, open it now (Phase 8: gh pr create, jira_add_comment, jira_transition_issue).
-3. If PR already exists, verify it's up to date with your latest commits.
-4. Write turn-result.json with status \"done\"."
+1. Read the QA results. If the core feature was validated with real data — open a PR if you haven't already.
+2. If QA couldn't validate the core feature and reported BLOCKED — do NOT open a PR pretending it works. Write turn-result.json with status \"blocked\", post the QA blocker details to JIRA, and explain exactly what a human needs to provide.
+3. If the PR is already open, make sure it's pushed with your latest fixes and the description honestly reflects what was validated and what wasn't."
 
 else
-  # Middle iterations — keep improving
-  PROMPT="Iteration $NEXT/$MAX_ITERATIONS. Keep improving.
+  # Middle iterations — act on specific QA findings
+  PROMPT="Iteration $NEXT/$MAX_ITERATIONS. Read the QA results from your last wario-qa dispatch.
 
-1. Check QA results from last iteration. What failed? What's still untested?
-2. Run the actual feature with real data. Does it work end-to-end?
-3. Fix issues, improve validation, commit and push.
-4. If you need something external (credentials, access, test data), write turn-result.json with status \"blocked\" and post to JIRA."
+For each FAIL or BLOCKED item:
+- FAIL: the QA agent tried and it didn't work. Read what they tried, what happened, and fix the root cause. Don't just re-run — understand WHY it failed.
+- BLOCKED: the QA agent couldn't test it. Can YOU unblock it? Check if the env is running, if credentials are configured, if there's test data you can create or query for. Try to make the test runnable, then re-dispatch wario-qa.
+
+If all items passed: look at the QA evidence. Is the evidence real? 'Processed: 0 items' is not a pass. 'No errors' is not a pass. You need positive evidence — actual data, actual output, actual visible results.
+
+Commit and push any fixes. If you need something external, write turn-result.json \"blocked\" and post to JIRA."
 fi
 
 # Block exit and re-feed the iteration prompt
