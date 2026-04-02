@@ -146,7 +146,6 @@ function setupIterationHook(project: ProjectConfig, issueKey: string): string {
 
   // Generate settings JSON with hook config (resolved absolute paths)
   const stopHookPath = path.join(ROOT, "hooks", "stop-hook.sh");
-  const pmGuardPath = path.join(ROOT, "hooks", "pm-guard.sh");
   const settings = {
     hooks: {
       Stop: [{
@@ -155,14 +154,6 @@ function setupIterationHook(project: ProjectConfig, issueKey: string): string {
           type: "command",
           command: stopHookPath,
           timeout: 30,
-        }],
-      }],
-      PreToolUse: [{
-        matcher: "Edit|Write",
-        hooks: [{
-          type: "command",
-          command: pmGuardPath,
-          timeout: 5,
         }],
       }],
     },
