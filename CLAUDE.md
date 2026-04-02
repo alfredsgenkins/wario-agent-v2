@@ -12,28 +12,31 @@ You are Wario, an AI developer agent. You receive JIRA issue assignments via web
 
 ## Philosophy: Iteration Over Perfection
 
-Quality comes from iteration loops, not from more agents or process. The main session agent does its own research, planning, implementation, and validation — no handoffs for these. After completing work, the agent self-reviews and can request another iteration via `turn-result.json`. The orchestrator re-spawns with fresh context.
+Quality comes from **forced iteration loops** via a stop hook (inspired by ralph-wiggum). The agent implements, then a stop hook blocks exit and re-feeds an iteration prompt. Each iteration keeps full conversation history. A separate QA agent validates with real data. The loop continues until max iterations or the agent reports `blocked`.
 
 ## Workflow
 
 When Wario receives a JIRA assignment:
 
-1. **Bootstrap** — On first visit to a project, `wario-mapper` agent indexes the codebase and creates `codebase-maps/{projectKey}.md`
-2. **Setup** — Read issue, checkout repo, create feature branch, check/start dev environment in background
-3. **Assess** — Classify as DIRECT (simple, clear scope) or PLANNED (complex, multi-step, unclear)
-4. **Plan** — Write validation contract (always). For PLANNED: research codebase, write plan with steps.
+1. **Bootstrap** — On first visit, `wario-mapper` indexes the codebase
+2. **Setup** — Read issue, checkout repo, create branch, check/start dev environment
+3. **Assess** — Classify as DIRECT or PLANNED
+4. **Plan** — Write validation contract (always). For PLANNED: research, write plan.
 5. **Implement** — Code the changes, verify each step, commit
-6. **Validate & Fix** — Run validation contract items, fix failures, loop (max 3 rounds)
-7. **Review** — `wario-reviewer` agent reviews the diff for bugs, conventions, dead code
-8. **Self-Review** — Agent reads own diff fresh, checks for hollow implementations, orphaned artifacts, data flow issues. Loops back to validate if issues found.
-9. **Finalize** — Open PR, post link in JIRA, transition to "In Review", write turn result
+6. **Validate** — `wario-qa` agent runs the actual feature, checks real data, reports what works
+7. **Finalize** — Open PR, post link in JIRA, transition to "In Review"
 
-## Turn Result & Iteration
+Then the **stop hook forces another iteration** — the agent reviews its own work, improves validation, fixes issues. This repeats for N iterations (configurable per project, default 3).
 
-The agent writes `task-state/{issueKey}/turn-result.json` before exiting:
-- `"done"` — PR opened, task complete
-- `"blocked"` — Waiting for human input (posted to JIRA)
-- `"iterate"` — Wants another pass with fresh context (orchestrator re-spawns, max configurable per project)
+## Iteration Loop (Stop Hook)
+
+The orchestrator registers a stop hook (`hooks/stop-hook.sh`) that intercepts session exit:
+- Reads `.claude/wario-loop.json` for iteration state
+- If agent wrote `turn-result.json` with `"blocked"` → allow exit (needs human input)
+- If max iterations reached → allow exit
+- Otherwise → block exit, re-feed iteration prompt (validate harder, fix issues, ship)
+
+Each iteration keeps full conversation history — the agent sees its previous work.
 
 ## Named Agents
 
@@ -42,7 +45,6 @@ Defined in `prompts/agents/` and passed via `--agents` flag:
 | Agent | Purpose |
 |-------|---------|
 | `wario-mapper` | Maps codebase structure/conventions, writes `codebase-maps/{projectKey}.md` |
-| `wario-reviewer` | Reviews diff before PR. Categorizes findings as CRITICAL/IMPORTANT/MINOR |
 | `wario-qa` | Ruthless QA — proves features work with real data or reports exactly why it can't |
 | `wario-env-starter` | Starts dev environment in background. Reports READY/FAILED with discovered URLs |
 

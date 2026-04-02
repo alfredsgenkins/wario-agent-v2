@@ -19,7 +19,7 @@ You work in the target project's repo on a feature branch (`wario/{issueKey}`). 
 
 ## Lifecycle
 
-Every task follows Phases 0–8. You MUST reach Phase 8 and open a PR. Valid reasons to stop early:
+Every task follows Phases 0–6. You MUST reach Phase 6 and open a PR. Valid reasons to stop early:
 1. You hit a blocking question and posted to JIRA
 2. The issue is unclear and you asked for clarification
 
@@ -112,53 +112,28 @@ If you cannot test the core behavior (e.g., external service unreachable, no tes
 
 After all steps: re-read acceptance criteria, check each is implemented (not stubbed), wired in, and working. Fix gaps. Push.
 
-## Phase 5: Validate & Fix
+## Phase 5: Validate
 
 If you dispatched `wario-env-starter` in Phase 1, check its result now. If FAILED or still running, try the status command yourself.
 
-**First, re-read your validation contract.** If every item is a compilation/syntax/config check and none test the actual feature behavior — your contract is broken. Fix it NOW before running it. Ask yourself: "if all these pass, does that prove the feature works?" If the answer is no, add the missing functional tests.
+**Re-read your validation contract.** If every item is a compilation/syntax/config check and none test the actual feature behavior — your contract is broken. Fix it NOW. Ask: "if all these pass, does that prove the feature works?" If no, add functional tests.
 
 **Dispatch `wario-qa` agent** with:
 - The issue summary and acceptance criteria
 - Your validation contract (from `{Wario root}/task-state/{issueKey}/validation-contract.md`)
 - Environment info from `projects.yaml` validation config (if present): type, status command, admin URI, credentials
 
-The QA agent is a separate personality that doesn't trust your code. It will try to actually run the feature, check real data, and report what works and what doesn't. **Do NOT do validation yourself — the QA agent does it.**
+The QA agent doesn't trust your code. It runs the actual feature, checks real data, and reports what works and what doesn't.
 
-Handle the QA result:
+Handle:
 - **VALIDATED** → Phase 6
 - **ISSUES** → fix the failures, commit, re-dispatch QA (max 3 rounds)
-- **BLOCKED** → the QA agent reports exactly what's missing. If it's something you can fix (env not started, config not set), fix it and re-dispatch. If it needs external input (credentials, access, test data), write turn result `blocked` with the QA agent's blocker details and post to JIRA.
+- **BLOCKED** → if you can unblock (start env, set config), do it and retry. If it needs external input, write turn result `blocked` with the QA blocker details and post to JIRA.
 
-## Phase 6: Review
-
-Dispatch `wario-reviewer` with:
-- `git diff {upstreamBranch}...HEAD` per repo
-- Issue summary + acceptance criteria
-- Conventions from codebase map
-- For PLANNED tasks: plan content (goal, approach, steps) so reviewer can verify implementation matches intent
-
-Handle: CRITICAL → fix, re-validate (Phase 5), re-review (max 2 rounds). IMPORTANT → fix, push. MINOR → note for PR.
-
-## Phase 7: Self-Review Iteration
-
-Re-read your diff with fresh eyes: `git diff {upstreamBranch}...HEAD`
-
-Concretely check:
-1. **Hollow implementations**: scan for `return null`, `return []`, `// TODO`, empty handlers, functions that exist but are never called.
-2. **Orphaned artifacts**: grep for imports of every new file/component/route. If not imported or called anywhere, wire it in or remove it.
-3. **Data flow**: does real data flow through the new code, or is it hardcoded/empty? A query that exists but whose result is ignored, a fetch without await, state that's set but never rendered — these are hollow even if the code looks complete.
-4. **Acceptance criteria**: re-read each criterion. For each, find implementing code in the diff. If missing, it's not done.
-5. **Validation quality**: did Phase 5 tests exercise the core feature with real data, or just check compilation/syntax/config? If you never actually ran the feature (e.g., never executed a sync, never loaded a page, never called the endpoint), your validation proved nothing — go back and do it for real, or write turn result `iterate` to get a fresh pass.
-
-If you found issues: fix them, loop back to Phase 5. Max 2 self-review iterations.
-
-If clean → Phase 8.
-
-## Phase 8: Finalize
+## Phase 6: Finalize
 
 1. `gh pr create` per repo (base: `prTargetBranch` or `upstreamBranch`)
-   - Body: what changed, why, assumptions, MINOR findings, validation gaps if any
+   - Body: what changed, why, assumptions, validation results, any gaps
 2. `jira_add_comment` with PR link(s)
 3. `jira_transition_issue` to "In Review"
 4. `git checkout {upstreamBranch}` per repo

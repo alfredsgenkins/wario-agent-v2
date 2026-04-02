@@ -29,7 +29,6 @@ interface ManagedSession {
   debounceTimer: NodeJS.Timeout | null;
   lastActivityAt: number;
   humanChatActive: boolean;
-  iterationCount: number;
 }
 
 const sessions = new Map<string, ManagedSession>();
@@ -76,7 +75,6 @@ function buildMcpConfig(): string {
 function buildAgentsJson(): string {
   const agents: Record<string, { description: string; prompt: string }> = {};
   const agentFiles = [
-    { name: "wario-reviewer", file: "wario-reviewer.md", description: "Reviews code changes before PR" },
     { name: "wario-mapper", file: "wario-mapper.md", description: "Maps a codebase structure and conventions" },
     { name: "wario-env-starter", file: "wario-env-starter.md", description: "Starts the project dev environment in the background" },
     { name: "wario-qa", file: "wario-qa.md", description: "Ruthless QA — proves features work with real data or reports exactly why it can't" },
@@ -132,50 +130,36 @@ function issueKeyToUUID(issueKey: string): string {
   );
 }
 
-/** Build the prompt for a forced iteration turn */
-function buildIterationPrompt(iteration: number, max: number, prevStatus: string, prevPhase: string, issueKey: string): string {
-  const taskStateDir = `task-state/${issueKey}`;
+/** Write the stop hook state file and settings for forced iteration */
+function setupIterationHook(project: ProjectConfig, issueKey: string): string {
+  // Write .claude/wario-loop.json in the repo cwd
+  const claudeDir = path.join(project.localRepoPath, ".claude");
+  fs.mkdirSync(claudeDir, { recursive: true });
+  const stateFile = path.join(claudeDir, "wario-loop.json");
+  fs.writeFileSync(stateFile, JSON.stringify({
+    issueKey,
+    warioRoot: ROOT,
+    maxIterations: project.maxIterations ?? 3,
+    iteration: 0,
+  }, null, 2));
 
-  if (iteration === 1) {
-    // Second pass (iteration 0 was the first implementation pass)
-    return [
-      `Iteration ${iteration}/${max}. You just finished your first pass. Now review your own work with fresh eyes.`,
-      ``,
-      `1. Read your validation contract at ${taskStateDir}/validation-contract.md`,
-      `2. Read your diff: git diff {upstreamBranch}...HEAD`,
-      `3. CRITICAL: Does your validation contract test the ACTUAL FEATURE BEHAVIOR? If every item is a compilation/syntax/config check, your contract is garbage — rewrite it with functional tests that prove the feature works.`,
-      `4. Run the functional tests. Did you actually exercise the feature with real data? If not, do it now.`,
-      `5. Fix any issues you find, commit, and push.`,
-      ``,
-      `Write turn-result.json when done. "blocked" if you need external input. Otherwise the orchestrator will keep iterating.`,
-    ].join("\n");
-  }
-
-  if (iteration >= max - 1) {
-    // Final iteration — wrap up
-    return [
-      `Iteration ${iteration}/${max} (FINAL). Last chance to catch issues before this ships.`,
-      ``,
-      `1. Read git diff one more time. Check for hollow implementations, orphaned artifacts, missing acceptance criteria.`,
-      `2. Verify your validation contract items still pass.`,
-      `3. If you haven't opened a PR yet, do it now (Phase 8).`,
-      `4. If the PR is already open, verify it's correct and the description is accurate.`,
-      ``,
-      `Write turn-result.json when done.`,
-    ].join("\n");
-  }
-
-  // Middle iterations
-  return [
-    `Iteration ${iteration}/${max}. Continue improving your work.`,
-    ``,
-    `1. Read ${taskStateDir}/turn-result.json for where you left off${prevPhase ? ` (${prevPhase})` : ""}.`,
-    `2. Check git status and your validation contract.`,
-    `3. Run validation tests — did they actually prove the feature works?`,
-    `4. Fix issues, commit, push.`,
-    ``,
-    `Write turn-result.json when done. "blocked" if you need external input.`,
-  ].join("\n");
+  // Generate settings JSON with hook config (resolved absolute path)
+  const hookPath = path.join(ROOT, "hooks", "stop-hook.sh");
+  const settings = {
+    hooks: {
+      Stop: [{
+        matcher: "",
+        hooks: [{
+          type: "command",
+          command: hookPath,
+          timeout: 30,
+        }],
+      }],
+    },
+  };
+  const settingsPath = path.join(ROOT, "mcp-configs", `.wario-settings-${issueKey}.json`);
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  return settingsPath;
 }
 
 /** Check if a human chat lock file exists for this issue */
@@ -257,7 +241,6 @@ function initSession(event: WebhookEvent, project: ProjectConfig): ManagedSessio
     debounceTimer: null,
     lastActivityAt: Date.now(),
     humanChatActive: false,
-    iterationCount: 0,
   };
 
   sessions.set(issueKey, managed);
@@ -294,6 +277,7 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
 
   const mcpConfig = buildMcpConfig();
   const agentsJson = buildAgentsJson();
+  const settingsPath = setupIterationHook(project, issueKey);
 
   const args = [
     "-p",
@@ -302,6 +286,8 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
     "--name",
     `wario-${issueKey}`,
     "--dangerously-skip-permissions",
+    "--settings",
+    settingsPath,
     "--mcp-config",
     mcpConfig,
     "--agents",
@@ -414,48 +400,23 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
       });
     }
 
-    // Forced iteration loop: always re-spawn unless blocked or iteration limit reached.
-    // The agent doesn't decide when to stop — the orchestrator does.
+    // Iteration is handled by the stop hook (hooks/stop-hook.sh).
+    // When the process exits here, the hook already allowed it — meaning either:
+    //   - Agent wrote "blocked" in turn-result.json
+    //   - Max iterations reached
+    //   - Hook state file was removed
+    // Log the final state for visibility.
     const turnResultPath = path.join(ROOT, "task-state", issueKey, "turn-result.json");
-    const maxIterations = project.maxIterations ?? 3;
-    const iterCount = managed.iterationCount ?? 0;
-
-    // Read turn-result if it exists (agent may signal blocked)
-    let turnStatus = "done";
-    let turnMessage = "";
-    let turnPhase = "";
     if (fs.existsSync(turnResultPath)) {
       try {
         const turnResult = JSON.parse(fs.readFileSync(turnResultPath, "utf-8"));
-        turnStatus = turnResult.status || "done";
-        turnMessage = turnResult.message || "";
-        turnPhase = turnResult.phase || "";
-      } catch (err: any) {
-        log(issueKey, `Could not parse turn-result.json: ${err.message}`);
-      }
+        log(issueKey, `Final status: ${turnResult.status}${turnResult.message ? " — " + turnResult.message : ""}`);
+      } catch { /* ignore */ }
     }
 
-    if (!budgetExhausted && turnStatus === "blocked") {
-      // Agent is blocked — stop iterating, wait for external input
-      log(issueKey, `Agent is blocked: ${turnMessage}. Pick up: ./scripts/chat.sh ${issueKey}`);
-    } else if (!budgetExhausted && iterCount < maxIterations) {
-      // Force another iteration regardless of what the agent thinks
-      managed.iterationCount = iterCount + 1;
-      const isFirst = iterCount === 0; // first pass just completed
-      const isFinal = managed.iterationCount >= maxIterations;
-
-      log(issueKey, `Iteration ${managed.iterationCount}/${maxIterations}${isFinal ? " (final)" : ""}: ${turnStatus === "iterate" ? turnMessage || "agent requested" : "forced by orchestrator"}`);
-
-      managed.eventQueue.unshift({
-        source: "self",
-        eventType: "self_iteration",
-        issueKey,
-        projectKey: managed.projectKey,
-        message: buildIterationPrompt(managed.iterationCount, maxIterations, turnStatus, turnPhase, issueKey),
-      });
-    } else if (iterCount >= maxIterations) {
-      log(issueKey, `All ${maxIterations} iterations complete. Pick up: ./scripts/chat.sh ${issueKey}`);
-    }
+    // Clean up hook state file
+    const hookState = path.join(project.localRepoPath, ".claude", "wario-loop.json");
+    if (fs.existsSync(hookState)) fs.unlinkSync(hookState);
 
     // Process queued events for this issue first
     if (managed.eventQueue.length > 0) {
