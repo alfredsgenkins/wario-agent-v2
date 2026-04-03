@@ -28,17 +28,8 @@ fi
 MAX_ITERATIONS=$(jq -r '.maxIterations // 3' "$STATE_FILE")
 ITERATION=$(jq -r '.iteration // 0' "$STATE_FILE")
 
-TASK_DIR="$WARIO_ROOT/task-state/$ISSUE_KEY"
+TASK_DIR="$(dirname "$STATE_FILE")"
 TURN_RESULT="$TASK_DIR/turn-result.json"
-
-# Also check common misplaced paths (agent sometimes writes to wario root or cwd)
-for candidate in "$TURN_RESULT" "$WARIO_ROOT/turn-result.json" "./turn-result.json"; do
-  if [[ -f "$candidate" ]] && [[ "$candidate" != "$TURN_RESULT" ]]; then
-    mkdir -p "$(dirname "$TURN_RESULT")"
-    mv "$candidate" "$TURN_RESULT"
-    break
-  fi
-done
 
 # Check if agent reported blocked
 if [[ -f "$TURN_RESULT" ]]; then
