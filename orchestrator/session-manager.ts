@@ -134,13 +134,12 @@ function issueKeyToUUID(issueKey: string): string {
 
 /** Write the stop hook state file and settings for forced iteration */
 function setupIterationHook(project: ProjectConfig, issueKey: string): string {
-  // Write .claude/wario-loop.json in the repo cwd
-  const claudeDir = path.join(project.localRepoPath, ".claude");
-  fs.mkdirSync(claudeDir, { recursive: true });
-  const stateFile = path.join(claudeDir, "wario-loop.json");
+  // Write wario-loop.json in task-state/{issueKey}/ alongside turn-result.json and plan.md
+  const taskDir = path.join(ROOT, "task-state", issueKey);
+  fs.mkdirSync(taskDir, { recursive: true });
+  const stateFile = path.join(taskDir, "wario-loop.json");
   fs.writeFileSync(stateFile, JSON.stringify({
     issueKey,
-    warioRoot: ROOT,
     maxIterations: project.maxIterations ?? 4,
     iteration: 0,
   }, null, 2));
@@ -148,7 +147,7 @@ function setupIterationHook(project: ProjectConfig, issueKey: string): string {
   // Clear stale turn-result.json from previous runs.
   // Without this, a "blocked" from run 1 causes the stop hook to immediately
   // allow exit on run 2 — before the PM completes Phase 5.
-  const turnResultPath = path.join(ROOT, "task-state", issueKey, "turn-result.json");
+  const turnResultPath = path.join(taskDir, "turn-result.json");
   if (fs.existsSync(turnResultPath)) {
     fs.unlinkSync(turnResultPath);
   }
@@ -459,7 +458,7 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
     }
 
     // Clean up hook state file
-    const hookState = path.join(project.localRepoPath, ".claude", "wario-loop.json");
+    const hookState = path.join(ROOT, "task-state", issueKey, "wario-loop.json");
     if (fs.existsSync(hookState)) fs.unlinkSync(hookState);
 
     // Process queued events for this issue first
@@ -539,12 +538,15 @@ export async function recoverSessions(projects: ProjectConfig[], issueFilter?: s
     console.log(`[Recovery] Cleaned up ${staleChats.length} stale human-chat lock(s)`);
   }
 
-  // Part 0b: Clean up stale wario-loop.json files in project repos
-  for (const project of projects) {
-    const loopFile = path.join(project.localRepoPath, ".claude", "wario-loop.json");
-    if (fs.existsSync(loopFile)) {
-      fs.unlinkSync(loopFile);
-      console.log(`[Recovery] Cleaned up stale wario-loop.json in ${project.jiraProjectKey}`);
+  // Part 0b: Clean up stale wario-loop.json files in task-state dirs
+  const taskStateDir = path.join(ROOT, "task-state");
+  if (fs.existsSync(taskStateDir)) {
+    for (const dir of fs.readdirSync(taskStateDir)) {
+      const loopFile = path.join(taskStateDir, dir, "wario-loop.json");
+      if (fs.existsSync(loopFile)) {
+        fs.unlinkSync(loopFile);
+        console.log(`[Recovery] Cleaned up stale wario-loop.json for ${dir}`);
+      }
     }
   }
 

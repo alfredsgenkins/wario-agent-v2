@@ -31,7 +31,7 @@ Then the **stop hook forces another iteration** — the agent reviews its own wo
 ## Iteration Loop (Stop Hook)
 
 The orchestrator registers a stop hook (`hooks/stop-hook.sh`) that intercepts session exit:
-- Reads `.claude/wario-loop.json` for iteration state
+- Reads `task-state/{issueKey}/wario-loop.json` for iteration state
 - If agent wrote `turn-result.json` with `"blocked"` → allow exit (needs human input)
 - If max iterations reached → allow exit
 - Otherwise → block exit, re-feed iteration prompt (validate harder, fix issues, ship)

@@ -4,31 +4,44 @@
 #   - Agent writes turn-result.json with status "blocked"
 #   - Max iterations reached
 #
-# State file: .claude/wario-loop.json (written by orchestrator before spawn)
-# Turn result: {warioRoot}/task-state/{issueKey}/turn-result.json (written by agent)
-# Prompts: {warioRoot}/prompts/iteration-prompts.md (sections: Checklist, First, Middle, Final)
+# State file: {warioRoot}/task-state/{issueKey}/wario-loop.json
+# Turn result: {warioRoot}/task-state/{issueKey}/turn-result.json
+# Prompts: {warioRoot}/prompts/iteration-prompts.md
 
 set -euo pipefail
 
 HOOK_INPUT=$(cat)
 
-# Check for wario loop state file (written by orchestrator in the repo cwd)
-STATE_FILE=".claude/wario-loop.json"
-if [[ ! -f "$STATE_FILE" ]]; then
-  exit 0  # Not a wario session — allow exit
+# Derive wario root from this script's location (hooks/ is one level deep)
+WARIO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Find the active loop state file — scan task-state dirs for wario-loop.json
+STATE_FILE=""
+TASK_STATE_DIR="$WARIO_ROOT/task-state"
+if [[ -d "$TASK_STATE_DIR" ]]; then
+  for dir in "$TASK_STATE_DIR"/*/; do
+    candidate="$dir/wario-loop.json"
+    if [[ -f "$candidate" ]]; then
+      STATE_FILE="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$STATE_FILE" ]]; then
+  exit 0  # No active wario session — allow exit
 fi
 
 ISSUE_KEY=$(jq -r '.issueKey' "$STATE_FILE")
-WARIO_ROOT=$(jq -r '.warioRoot' "$STATE_FILE")
 MAX_ITERATIONS=$(jq -r '.maxIterations // 3' "$STATE_FILE")
 ITERATION=$(jq -r '.iteration // 0' "$STATE_FILE")
 
-TURN_RESULT="$WARIO_ROOT/task-state/$ISSUE_KEY/turn-result.json"
+TASK_DIR="$WARIO_ROOT/task-state/$ISSUE_KEY"
+TURN_RESULT="$TASK_DIR/turn-result.json"
 
 # Also check common misplaced paths (agent sometimes writes to wario root or cwd)
 for candidate in "$TURN_RESULT" "$WARIO_ROOT/turn-result.json" "./turn-result.json"; do
   if [[ -f "$candidate" ]] && [[ "$candidate" != "$TURN_RESULT" ]]; then
-    # Move misplaced file to correct location
     mkdir -p "$(dirname "$TURN_RESULT")"
     mv "$candidate" "$TURN_RESULT"
     break

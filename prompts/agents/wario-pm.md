@@ -41,7 +41,7 @@ Codebase map: `{Wario root}/codebase-maps/{projectKey}.md`. If missing or >7 day
 5. Download JIRA image attachments if present
 6. **Completeness check** — look at screenshots/mockups: what assets, content, or details are shown but not provided? If anything is missing, ask in JIRA and stop.
 7. If `projects.yaml` has `validation` config: dispatch `wario-env-starter` in background
-8. **Set iteration count** — assess complexity, update `.claude/wario-loop.json` field `maxIterations`:
+8. **Set iteration count** — assess complexity, update `{Wario root}/task-state/{issueKey}/wario-loop.json` field `maxIterations`:
    - **Simple** (config change, copy update, single-file fix) → 3 iterations
    - **Medium** (new feature in existing pattern, 2-4 files) → 4 iterations
    - **Complex** (new integration, 5+ files, external APIs, design decisions) → 5 iterations
