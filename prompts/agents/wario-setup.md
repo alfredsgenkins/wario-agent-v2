@@ -183,24 +183,15 @@ If yes, collect info for **each repo** (steps 3a-3c). If no, collect once for th
 
 **Step 5.5: Validation setup** — Discover how the project is tested visually. This enables Wario to validate changes in a real browser before opening PRs.
 
-1. **Detect project type**:
-   - Look for `cma.js` in the repo root → CMA (Magento with create-magento-app)
-   - Look for `docker-compose.yml` in the repo root → Docker Compose
-   - If neither found, ask: "How do you run this project locally?"
-2. **Auto-discover credentials** (CMA only): Read `cma.js` and extract `magento.user`, `magento.password`, and `magento.adminuri`
-3. **Status command**: Suggest based on type:
-   - CMA: `yarn status`
-   - Docker Compose: `docker compose ps`
-   - Ask: "How do you check if the dev environment is running? (suggested: `{suggestion}`)"
-4. **Start command**: Suggest based on type:
-   - CMA: `yarn start --no-open`
-   - Docker Compose: `docker compose up -d --build`
-   - Ask: "How do you start the dev environment? (suggested: `{suggestion}`)"
-5. **Common QA flows**: Ask: "What are the common things you or QA check after making changes? For example: 'admin product grid', 'frontend homepage', 'checkout flow'. List a few — these help Wario do smoke tests after every change."
-   - For each flow, capture: name, URL path (relative to admin or frontend), description
+1. **Detect project type**: Look for common config files (`docker-compose.yml`, `package.json`, `Makefile`, etc.) to suggest the type. If unclear, ask: "How do you run this project locally?"
+2. **Auto-discover credentials**: Check project config files for default admin credentials. If not found, ask the user.
+3. **Status command**: Ask: "How do you check if the dev environment is running?" Suggest based on what you found (e.g. `docker compose ps`, `yarn status`, `curl localhost:PORT/health`).
+4. **Start command**: Ask: "How do you start the dev environment?" Suggest based on project type (e.g. `docker compose up -d`, `yarn start`, `make dev`).
+5. **Common QA flows**: Ask: "What are the common pages or features you check after making changes? (e.g. 'homepage', 'login page', 'API health endpoint'). List a few — these help Wario do smoke tests."
+   - For each flow, capture: name, URL path, description
 6. Write the `validation` section to `projects.yaml`
 
-**Step 6: Budget** (optional) — Ask: "Max Claude API budget per session in USD? (default: 5.00)"
+**Step 6: Budget** (optional) — Ask: "Max Claude API budget per session in USD? (default: 10.00)"
 
 ### Write projects.yaml
 
@@ -218,22 +209,22 @@ projects:
     prTargetBranch: "staging"  # optional — PR base branch (defaults to upstreamBranch)
     instructions: |
       User-provided instructions here.
-    maxBudgetUsd: 5.00
+    maxBudgetUsd: 10.00
     validation:
-      type: "cma"
-      statusCommand: "yarn status"
-      startCommand: "yarn start --no-open"
-      adminUri: "admin"
-      credentials:
+      type: "docker-compose"  # or whatever was detected
+      statusCommand: "docker compose ps"
+      startCommand: "docker compose up -d"
+      adminUri: "admin"  # optional
+      credentials:  # optional
         username: "admin"
-        password: "scandipwa123"
+        password: "changeme"
       commonFlows:
-        - name: "Admin login"
-          path: "/{adminUri}"
-          description: "Log into admin panel"
-        - name: "Product catalog"
-          path: "/{adminUri}/catalog/product"
-          description: "Check product grid loads"
+        - name: "Homepage"
+          path: "/"
+          description: "Check main page loads"
+        - name: "Health check"
+          path: "/api/health"
+          description: "Verify API responds"
 ```
 
 **Multi-repo format** (multiple repos under one JIRA project):
@@ -256,7 +247,7 @@ projects:
         upstreamBranch: "production"
         prTargetBranch: "staging"  # optional — PRs target staging instead of production
     instructions: |
-      Two repos: OMS (Node) at root, M2 (Magento) at ./real-melrose/.
+      Two repos: API (Node) at root, frontend (React) at ./web/.
       Each has its own git. Commit and PR separately.
     maxBudgetUsd: 10.00
 ```

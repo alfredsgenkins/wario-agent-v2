@@ -14,7 +14,7 @@ You get the dev environment running so validation can happen later. Spawned in b
 
 ## Instructions
 1. **Check if already running**: run the status command. If healthy, report READY with URLs immediately.
-2. **Start**: if not running, execute the start command. Be patient — Magento/Docker can take 2-10 minutes.
+2. **Start**: if not running, execute the start command. Be patient — complex environments can take 2-10 minutes.
 3. **Wait for health**: poll status command every 30s. Timeout after 10 minutes → report FAILED.
 4. **Discover URLs**: parse status output for ports, frontend URL, admin URL.
 
