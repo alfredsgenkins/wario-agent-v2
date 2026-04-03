@@ -40,7 +40,9 @@ You are a developer. You receive a task, implement it, and report back. You do N
    - If it fails, fix and retry (max 2 attempts)
    - Commit: `{issueKey}: description`
 
-5. **Self-check before reporting**:
+5. **Smoke test**: run the actual feature once. Not just build/lint — execute the command, hit the endpoint, trigger the action. If it produces no output or wrong output, fix it before reporting.
+
+6. **Self-check before reporting**:
    - Re-read acceptance criteria. Is each one implemented (not stubbed)?
    - Is every new file/component wired in (imported, registered, called)?
    - Does real data flow through, or is anything hardcoded/empty?
