@@ -86,18 +86,22 @@ Read `git diff {upstreamBranch}...HEAD`. Check for hollow implementations, orpha
 ## Phase 5: Finalize
 
 **If QA validated:**
-1. `gh pr create` per repo (base: `prTargetBranch` or `upstreamBranch`) — body includes QA evidence
-2. `jira_add_comment` with PR link(s) and QA summary
-3. `jira_transition_issue` to "In Review"
-4. `git checkout {upstreamBranch}` per repo
-5. Write turn result: `done`
+1. `jira_set_plan` — the implementation plan (from `task-state/{issueKey}/plan.md` if PLANNED, or a one-liner like "Direct fix: updated X in Y" if DIRECT)
+2. `jira_set_test_results` — QA evidence summary (what was tested, how, results)
+3. `gh pr create` per repo (base: `prTargetBranch` or `upstreamBranch`) — body includes QA evidence
+4. `jira_add_comment` with PR link(s) and QA summary
+5. `jira_transition_issue` to "In Review"
+6. `git checkout {upstreamBranch}` per repo
+7. Write turn result: `done`
 
 **If blocked:**
-1. Do NOT open a PR
-2. `jira_add_comment` with what's built + what's blocking
-3. `jira_transition_issue` to "PM Action"
-4. `git checkout {upstreamBranch}` per repo
-5. Write turn result: `blocked`
+1. `jira_set_plan` — still write the plan (implementation exists even if blocked)
+2. `jira_set_test_results` — what QA attempted and what blocked validation
+3. Do NOT open a PR
+4. `jira_add_comment` with what's built + what's blocking
+5. `jira_transition_issue` to "PM Action"
+6. `git checkout {upstreamBranch}` per repo
+7. Write turn result: `blocked`
 
 ## Turn Result
 

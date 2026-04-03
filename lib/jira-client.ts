@@ -71,6 +71,19 @@ export class JiraClient {
     return text ? JSON.parse(text) : undefined;
   }
 
+  async put(path: string, body: any): Promise<void> {
+    const resp = await fetch(`${this.baseUrl}/rest/api/3${path}`, {
+      method: "PUT",
+      headers: {
+        Authorization: this.authHeader,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) await this.throwApiError(resp);
+  }
+
   async downloadUrl(url: string): Promise<Buffer> {
     const resp = await fetch(url, {
       headers: { Authorization: this.authHeader },

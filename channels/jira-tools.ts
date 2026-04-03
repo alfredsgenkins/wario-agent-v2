@@ -126,6 +126,44 @@ const TOOLS = [
     },
   },
   {
+    name: "jira_set_plan",
+    description:
+      'Set the "Plan" field on a JIRA issue. For complex tasks: the implementation plan. For simple/direct tasks: a one-liner like "Direct fix: updated X in Y".',
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        issue_key: {
+          type: "string",
+          description: "The issue key, e.g. INTERNAL-42",
+        },
+        content: {
+          type: "string",
+          description: "The plan content (plain text)",
+        },
+      },
+      required: ["issue_key", "content"],
+    },
+  },
+  {
+    name: "jira_set_test_results",
+    description:
+      'Set the "How I Tested" field on a JIRA issue. QA evidence: what was tested, how, and what the results were.',
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        issue_key: {
+          type: "string",
+          description: "The issue key, e.g. INTERNAL-42",
+        },
+        content: {
+          type: "string",
+          description: "The test results summary (plain text)",
+        },
+      },
+      required: ["issue_key", "content"],
+    },
+  },
+  {
     name: "jira_transition_issue",
     description:
       'Transition a JIRA issue to a new status (e.g. "In Progress", "In Review", "Done")',
@@ -253,6 +291,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
             },
           ],
         };
+      }
+
+      case "jira_set_plan": {
+        const { issue_key, content } = args as { issue_key: string; content: string };
+        await jira.put(`/issue/${issue_key}`, {
+          fields: { customfield_11719: content },
+        });
+        return { content: [{ type: "text", text: "Plan field updated." }] };
+      }
+
+      case "jira_set_test_results": {
+        const { issue_key, content } = args as { issue_key: string; content: string };
+        await jira.put(`/issue/${issue_key}`, {
+          fields: { customfield_10042: content },
+        });
+        return { content: [{ type: "text", text: "How I Tested field updated." }] };
       }
 
       case "jira_transition_issue": {

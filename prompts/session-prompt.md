@@ -99,16 +99,20 @@ If clean → Phase 5.
 ## Phase 5: Finalize
 
 **If QA validated the core feature:**
-1. `gh pr create` per repo (base: `prTargetBranch` or `upstreamBranch`)
+1. `jira_set_plan` — write the plan (from `task-state/{issueKey}/plan.md` if PLANNED, or a one-liner like "Direct fix: updated X in Y" if DIRECT)
+2. `jira_set_test_results` — write QA evidence summary (what was tested, how, results)
+3. `gh pr create` per repo (base: `prTargetBranch` or `upstreamBranch`)
    - Body: what was built, QA results with evidence, any assumptions, any gaps
-2. `jira_add_comment` with PR link(s) and QA summary
-3. `jira_transition_issue` to "In Review"
+4. `jira_add_comment` with PR link(s) and QA summary
+5. `jira_transition_issue` to "In Review"
 4. `git checkout {upstreamBranch}` per repo
 5. Write turn result: `done`
 
 **If QA could not validate the core feature (BLOCKED):**
-1. Do NOT open a PR.
-2. `jira_add_comment` with: what was built, what QA tested, what's blocking (exactly what a human needs to provide)
+1. `jira_set_plan` — still write the plan (the implementation exists even if blocked)
+2. `jira_set_test_results` — write what QA attempted and what blocked validation
+3. Do NOT open a PR.
+4. `jira_add_comment` with: what was built, what QA tested, what's blocking (exactly what a human needs to provide)
 3. `jira_transition_issue` to "PM Action"
 4. `git checkout {upstreamBranch}` per repo
 5. Write turn result: `blocked` with the blocker details
