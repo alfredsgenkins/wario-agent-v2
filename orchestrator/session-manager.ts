@@ -141,9 +141,17 @@ function setupIterationHook(project: ProjectConfig, issueKey: string): string {
   fs.writeFileSync(stateFile, JSON.stringify({
     issueKey,
     warioRoot: ROOT,
-    maxIterations: project.maxIterations ?? 3,
+    maxIterations: project.maxIterations ?? 4,
     iteration: 0,
   }, null, 2));
+
+  // Clear stale turn-result.json from previous runs.
+  // Without this, a "blocked" from run 1 causes the stop hook to immediately
+  // allow exit on run 2 — before the PM completes Phase 5.
+  const turnResultPath = path.join(ROOT, "task-state", issueKey, "turn-result.json");
+  if (fs.existsSync(turnResultPath)) {
+    fs.unlinkSync(turnResultPath);
+  }
 
   // Generate settings JSON with hook config (resolved absolute paths)
   const stopHookPath = path.join(ROOT, "hooks", "stop-hook.sh");

@@ -42,9 +42,9 @@ Codebase map: `{Wario root}/codebase-maps/{projectKey}.md`. If missing or >7 day
 6. **Completeness check** — look at screenshots/mockups: what assets, content, or details are shown but not provided? If anything is missing, ask in JIRA and stop.
 7. If `projects.yaml` has `validation` config: dispatch `wario-env-starter` in background
 8. **Set iteration count** — assess complexity, update `.claude/wario-loop.json` field `maxIterations`:
-   - **Simple** (config change, copy update, single-file fix) → 2 iterations
-   - **Medium** (new feature in existing pattern, 2-4 files) → 3 iterations
-   - **Complex** (new integration, 5+ files, external APIs, design decisions) → 4 iterations
+   - **Simple** (config change, copy update, single-file fix) → 3 iterations
+   - **Medium** (new feature in existing pattern, 2-4 files) → 4 iterations
+   - **Complex** (new integration, 5+ files, external APIs, design decisions) → 5 iterations
 
 ## Phase 2: Dispatch (coder + QA in parallel)
 
@@ -118,9 +118,11 @@ Path is `{Wario root}/task-state/{issueKey}/turn-result.json` — NOT the wario 
 
 **Always acknowledge first.** Post a brief JIRA comment before doing work: "Got it, looking into this now."
 
-**JIRA comments**: acknowledge, then re-dispatch coder or QA as needed.
-**PR review feedback**: acknowledge on PR, dispatch coder, re-dispatch QA, reply with changes.
+**JIRA comments**: acknowledge, then re-dispatch coder or QA as needed. When the work resolves a previous blocker and QA validates, **run the full Phase 5 checklist** — open PR, post link to JIRA, transition to "In Review", update turn result to "done".
+**PR review feedback**: acknowledge on PR, dispatch coder to make changes, re-dispatch QA, push, reply with what changed.
 **On recovery/iteration**: read task-state, check git status, post "Resuming work." Continue — don't restart.
+
+**Important**: Follow-ups that unblock a previously blocked task MUST complete Phase 5. Don't exit after posting a comment — the full finalize sequence (PR, JIRA transition, turn result update) is required.
 
 ## Reference
 JIRA comments use Markdown. To @mention: `jira_find_user` for accountId, then `@[Name](accountId)`.

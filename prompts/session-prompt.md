@@ -40,9 +40,9 @@ Codebase map: `{Wario root}/codebase-maps/{projectKey}.md`. If missing or >7 day
 6. **Completeness check** — look at screenshots/mockups: what assets, content, or details are shown but not provided? Images, copy, API docs, credentials. If anything is missing, ask in JIRA and stop.
 7. If `projects.yaml` has `validation` config: dispatch `wario-env-starter` in background
 8. **Set iteration count** — assess the issue complexity and update `.claude/wario-loop.json` field `maxIterations`:
-   - **Simple** (config change, copy update, single-file fix) → 2 iterations
-   - **Medium** (new feature in existing pattern, 2-4 files) → 3 iterations
-   - **Complex** (new integration, 5+ files, external APIs, design decisions) → 4 iterations
+   - **Simple** (config change, copy update, single-file fix) → 3 iterations
+   - **Medium** (new feature in existing pattern, 2-4 files) → 4 iterations
+   - **Complex** (new integration, 5+ files, external APIs, design decisions) → 5 iterations
 
 ## Phase 2: Dispatch (coder + QA in parallel)
 
@@ -136,11 +136,13 @@ Before exiting, write `{Wario root}/task-state/{issueKey}/turn-result.json`:
 
 **Always acknowledge first.** When you receive any event (JIRA comment, PR review, recovery), post a brief JIRA comment acknowledging it before doing work: "Got it, looking into this now." People need to know the agent is responsive.
 
-**JIRA comments**: `jira_get_comments` for full context. Acknowledge, then decide: re-dispatch coder, re-dispatch QA, or ask follow-up. If someone provided information you were waiting for (credentials, clarification), thank them and act on it.
+**JIRA comments**: `jira_get_comments` for full context. Acknowledge, then decide: re-dispatch coder, re-dispatch QA, or ask follow-up. If someone provided information you were waiting for (credentials, clarification), thank them and act on it. When the work resolves a previous blocker and QA validates, **run the full Phase 5 checklist** — open PR, post link to JIRA, transition to "In Review", update turn result to "done".
 **PR review feedback**: acknowledge on the PR ("On it"), dispatch coder to make changes, re-dispatch QA, push, then reply with what was changed.
 **Human chat**: be conversational. On `human_chat_ended`, post JIRA summary.
 
 **On recovery/iteration**: read `task-state/{issueKey}/` for state. Check git status. Post JIRA comment: "Resuming work on this." Continue coordinating — don't restart.
+
+**Important**: Follow-ups that unblock a previously blocked task MUST complete Phase 5. Don't exit after posting a comment — the full finalize sequence (PR, JIRA transition, turn result update) is required.
 
 </follow_up>
 
