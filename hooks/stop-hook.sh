@@ -31,12 +31,15 @@ ITERATION=$(jq -r '.iteration // 0' "$STATE_FILE")
 TASK_DIR="$(dirname "$STATE_FILE")"
 TURN_RESULT="$TASK_DIR/turn-result.json"
 
-# Check if agent wrote a turn result (done or blocked = allow exit)
+# Check if agent reported blocked (needs human input — iterations can't help)
+# Note: "done" is NOT an exit condition. The PM claims "done" prematurely —
+# that's exactly why the iteration loop exists. Only max iterations or
+# "blocked" allow exit.
 if [[ -f "$TURN_RESULT" ]]; then
-  TURN_STATUS=$(jq -r '.status // ""' "$TURN_RESULT" 2>/dev/null || echo "")
-  if [[ "$TURN_STATUS" == "blocked" || "$TURN_STATUS" == "done" ]]; then
-    TURN_MSG=$(jq -r '.message // ""' "$TURN_RESULT" 2>/dev/null || echo "")
-    echo "🛑 Wario: Agent finished ($TURN_STATUS) — $TURN_MSG" >&2
+  TURN_STATUS=$(jq -r '.status // "done"' "$TURN_RESULT" 2>/dev/null || echo "done")
+  if [[ "$TURN_STATUS" == "blocked" ]]; then
+    TURN_MSG=$(jq -r '.message // "waiting for input"' "$TURN_RESULT" 2>/dev/null || echo "")
+    echo "🛑 Wario: Agent blocked — $TURN_MSG" >&2
     rm -f "$STATE_FILE"
     exit 0  # Allow exit
   fi

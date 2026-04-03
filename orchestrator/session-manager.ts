@@ -133,14 +133,16 @@ function issueKeyToUUID(issueKey: string): string {
 }
 
 /** Write the stop hook state file and settings for forced iteration */
-function setupIterationHook(project: ProjectConfig, issueKey: string): string {
+function setupIterationHook(project: ProjectConfig, issueKey: string, isFollowUp: boolean): string {
   // Write wario-loop.json in task-state/{issueKey}/ alongside turn-result.json and plan.md
+  // Follow-ups (comments, PR reviews) get fewer iterations than fresh assignments
   const taskDir = path.join(ROOT, "task-state", issueKey);
   fs.mkdirSync(taskDir, { recursive: true });
   const stateFile = path.join(taskDir, "wario-loop.json");
+  const defaultIterations = project.maxIterations ?? 4;
   fs.writeFileSync(stateFile, JSON.stringify({
     issueKey,
-    maxIterations: project.maxIterations ?? 4,
+    maxIterations: isFollowUp ? Math.min(defaultIterations, 2) : defaultIterations,
     iteration: 0,
   }, null, 2));
 
@@ -314,7 +316,7 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
 
   const mcpConfig = buildMcpConfig();
   const agentsJson = buildAgentsJson();
-  const settingsPath = setupIterationHook(project, issueKey);
+  const settingsPath = setupIterationHook(project, issueKey, isResume);
 
   const args = [
     "-p",
