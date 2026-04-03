@@ -13,7 +13,7 @@ export interface ValidationFlow {
 }
 
 export interface ValidationConfig {
-  type: "cma" | "docker-compose" | "custom";
+  type: string; // e.g. "docker-compose", "custom"
   statusCommand: string;
   startCommand: string;
   adminUri?: string;
