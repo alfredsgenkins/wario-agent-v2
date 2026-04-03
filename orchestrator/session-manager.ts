@@ -186,14 +186,14 @@ function setupIterationHook(project: ProjectConfig, issueKey: string): string {
         matcher: "",
         hooks: [{
           type: "command",
-          command: stopHookPath,
+          command: `${stopHookPath} ${issueKey}`,
           timeout: 30,
         }],
       }],
     },
   };
-  // Single shared settings file (hook path is the same for all issues)
-  const settingsPath = path.join(ROOT, "mcp-configs", ".wario-settings.json");
+  // Per-issue settings file (stop hook command includes the issue key)
+  const settingsPath = path.join(ROOT, "mcp-configs", `.wario-settings-${issueKey}.json`);
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   return settingsPath;
 }

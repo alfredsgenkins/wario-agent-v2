@@ -12,27 +12,19 @@ set -euo pipefail
 
 HOOK_INPUT=$(cat)
 
+# Issue key passed as $1 by the orchestrator (baked into the hook command)
+ISSUE_KEY="${1:-}"
+if [[ -z "$ISSUE_KEY" ]]; then
+  exit 0  # No issue key — not a wario session, allow exit
+fi
+
 # Derive wario root from this script's location (hooks/ is one level deep)
 WARIO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Find the active loop state file — scan task-state dirs for wario-loop.json
-STATE_FILE=""
-TASK_STATE_DIR="$WARIO_ROOT/task-state"
-if [[ -d "$TASK_STATE_DIR" ]]; then
-  for dir in "$TASK_STATE_DIR"/*/; do
-    candidate="$dir/wario-loop.json"
-    if [[ -f "$candidate" ]]; then
-      STATE_FILE="$candidate"
-      break
-    fi
-  done
+STATE_FILE="$WARIO_ROOT/task-state/$ISSUE_KEY/wario-loop.json"
+if [[ ! -f "$STATE_FILE" ]]; then
+  exit 0  # No loop state — allow exit
 fi
-
-if [[ -z "$STATE_FILE" ]]; then
-  exit 0  # No active wario session — allow exit
-fi
-
-ISSUE_KEY=$(jq -r '.issueKey' "$STATE_FILE")
 MAX_ITERATIONS=$(jq -r '.maxIterations // 3' "$STATE_FILE")
 ITERATION=$(jq -r '.iteration // 0' "$STATE_FILE")
 
