@@ -55,7 +55,7 @@ Defined in `prompts/agents/` and passed via `--agents` flag:
 |------|---------|
 | `prompts/agents/wario-pm.md` | PM system prompt (loaded via `--system-prompt-file`) |
 | `prompts/agents/*.md` | Agent prompt templates |
-| `prompts/iteration-prompts.md` | Iteration loop prompts (loaded by stop hook) |
+| `prompts/iteration-prompt.md` | Iteration loop prompts (loaded by stop hook) |
 | `orchestrator/index.ts` | HTTP server, webhook routing, `--issue` filter |
 | `orchestrator/session-manager.ts` | Session lifecycle, spawn config, iteration loop |
 | `orchestrator/webhook-handlers.ts` | JIRA/GitHub webhook parsing |

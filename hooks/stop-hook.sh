@@ -6,7 +6,7 @@
 #
 # State file: {warioRoot}/task-state/{issueKey}/wario-loop.json
 # Turn result: {warioRoot}/task-state/{issueKey}/turn-result.json
-# Prompts: {warioRoot}/prompts/iteration-prompts.md
+# Prompts: {warioRoot}/prompts/iteration-prompt.md
 
 set -euo pipefail
 
@@ -56,7 +56,7 @@ mv "${STATE_FILE}.tmp" "$STATE_FILE"
 
 # --- Load iteration prompts from markdown file ---
 
-PROMPTS_FILE="$WARIO_ROOT/prompts/iteration-prompts.md"
+PROMPTS_FILE="$WARIO_ROOT/prompts/iteration-prompt.md"
 
 # Extract a section between "## <name>" and the next "## " (or EOF)
 extract_section() {
