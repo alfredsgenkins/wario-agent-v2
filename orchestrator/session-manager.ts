@@ -15,6 +15,7 @@ fs.mkdirSync(LOGS_DIR, { recursive: true });
 
 const DEBOUNCE_MS = 4000;
 const STUCK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — subagents (QA, coder) can run long without PM output
+const STUCK_AFTER_SUBAGENT_MS = 2 * 60 * 1000; // 2 minutes — PM should act quickly after subagent completes
 
 interface ManagedSession {
   issueKey: string;
@@ -27,6 +28,7 @@ interface ManagedSession {
   eventQueue: WebhookEvent[];
   debounceTimer: NodeJS.Timeout | null;
   lastActivityAt: number;
+  lastSubagentStopAt: number;
   humanChatActive: boolean;
 }
 
@@ -145,8 +147,34 @@ function setupIterationHook(project: ProjectConfig, issueKey: string): string {
 
   // Generate settings JSON with hook config (resolved absolute paths)
   const stopHookPath = path.join(ROOT, "hooks", "stop-hook.sh");
+  const pmGuardPath = path.join(ROOT, "hooks", "pm-guard.sh");
+  const agentLifecyclePath = path.join(ROOT, "hooks", "agent-lifecycle.sh");
   const settings = {
     hooks: {
+      PreToolUse: [{
+        matcher: "",
+        hooks: [{
+          type: "command",
+          command: pmGuardPath,
+          timeout: 5,
+        }],
+      }],
+      SubagentStart: [{
+        matcher: "",
+        hooks: [{
+          type: "command",
+          command: agentLifecyclePath,
+          timeout: 5,
+        }],
+      }],
+      SubagentStop: [{
+        matcher: "",
+        hooks: [{
+          type: "command",
+          command: agentLifecyclePath,
+          timeout: 5,
+        }],
+      }],
       Stop: [{
         matcher: "",
         hooks: [{
@@ -241,6 +269,7 @@ function initSession(event: WebhookEvent, project: ProjectConfig): ManagedSessio
     eventQueue: [],
     debounceTimer: null,
     lastActivityAt: Date.now(),
+    lastSubagentStopAt: 0,
     humanChatActive: false,
   };
 
@@ -307,7 +336,7 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
     "stream-json",
     "--verbose",
     "--max-budget-usd",
-    String(project.maxBudgetUsd || 5),
+    String(project.maxBudgetUsd || 10),
   ];
 
   log(issueKey, `${isResume ? "Resuming" : "Starting new"} session: ${event.eventType}`);
@@ -373,11 +402,17 @@ function runTurn(managed: ManagedSession, event: WebhookEvent): void {
     }
   });
 
-  // Log stderr
+  // Log stderr and detect agent lifecycle events
   const stderrRl = readline.createInterface({ input: child.stderr! });
   stderrRl.on("line", (line) => {
     managed.logStream.write(`[stderr] ${line}\n`);
-    if (line.includes("Error") || line.includes("error")) {
+    // Detect agent lifecycle events from agent-lifecycle.sh hook
+    if (line.includes("[agent-lifecycle]")) {
+      log(issueKey, line.replace(/^\[[\d:]+\]\s*/, ""));
+      if (line.includes("Stopped:")) {
+        managed.lastSubagentStopAt = Date.now();
+      }
+    } else if (line.includes("Error") || line.includes("error")) {
       log(issueKey, `[stderr] ${line}`);
     }
   });
@@ -647,8 +682,14 @@ export function startHealthCheck(): void {
       }
 
       // Stuck process: alive but no output for too long
+      // Use shorter timeout if a subagent recently completed (PM should act on results quickly)
       const idleMs = now - managed.lastActivityAt;
-      if (idleMs > STUCK_TIMEOUT_MS) {
+      const sinceSubagentStop = managed.lastSubagentStopAt > 0 ? now - managed.lastSubagentStopAt : Infinity;
+      const effectiveTimeout = (sinceSubagentStop < 15 * 60 * 1000 && sinceSubagentStop > STUCK_AFTER_SUBAGENT_MS)
+        ? STUCK_AFTER_SUBAGENT_MS
+        : STUCK_TIMEOUT_MS;
+
+      if (idleMs > effectiveTimeout) {
         // Check if the process has children (subagents running) — if so, it's not stuck
         try {
           const children = execSync(`pgrep -P ${managed.process.pid}`, {
@@ -661,7 +702,10 @@ export function startHealthCheck(): void {
         } catch {
           // pgrep returns non-zero if no children — that means truly stuck
         }
-        log(key, `Stuck process detected (no output for ${Math.round(idleMs / 60_000)}min, no child processes), killing`);
+        const reason = effectiveTimeout === STUCK_AFTER_SUBAGENT_MS
+          ? `no output for ${Math.round(idleMs / 60_000)}min after subagent completed`
+          : `no output for ${Math.round(idleMs / 60_000)}min, no child processes`;
+        log(key, `Stuck process detected (${reason}), killing`);
         managed.process.kill();
         managed.process = null;
         managed.status = "idle";
