@@ -539,6 +539,15 @@ export async function recoverSessions(projects: ProjectConfig[], issueFilter?: s
     console.log(`[Recovery] Cleaned up ${staleChats.length} stale human-chat lock(s)`);
   }
 
+  // Part 0b: Clean up stale wario-loop.json files in project repos
+  for (const project of projects) {
+    const loopFile = path.join(project.localRepoPath, ".claude", "wario-loop.json");
+    if (fs.existsSync(loopFile)) {
+      fs.unlinkSync(loopFile);
+      console.log(`[Recovery] Cleaned up stale wario-loop.json in ${project.jiraProjectKey}`);
+    }
+  }
+
   // Part 1: Fix stale active sessions (orchestrator just started, nothing is running)
   const allSessions = store.getAllSessions();
   let staleCount = 0;
