@@ -6,6 +6,7 @@
 #
 # State file: .claude/wario-loop.json (written by orchestrator before spawn)
 # Turn result: {warioRoot}/task-state/{issueKey}/turn-result.json (written by agent)
+# Prompts: {warioRoot}/prompts/iteration-prompts.md (sections: Checklist, First, Middle, Final)
 
 set -euo pipefail
 
@@ -57,79 +58,33 @@ fi
 jq --argjson n "$NEXT" '.iteration = $n' "$STATE_FILE" > "${STATE_FILE}.tmp"
 mv "${STATE_FILE}.tmp" "$STATE_FILE"
 
-# --- Build iteration-specific prompt for the PM ---
+# --- Load iteration prompts from markdown file ---
 
-read -r -d '' CHECKLIST << 'CHECKLIST_EOF' || true
-Review your coordination so far. Answer honestly:
+PROMPTS_FILE="$WARIO_ROOT/prompts/iteration-prompts.md"
 
-## Critique — do not trust previous results
+# Extract a section between "## <name>" and the next "## " (or EOF)
+extract_section() {
+  local section="$1"
+  sed -n "/^## ${section}$/,/^## /{ /^## ${section}$/d; /^## /d; p; }" "$PROMPTS_FILE"
+}
 
-Do NOT trust what the coder or QA reported at face value. Reports document what agents SAID they did. You verify what ACTUALLY works. These often differ.
-
-**Goal-backward verification** — work backwards from the outcome:
-1. What must be TRUE for the JIRA issue to be resolved?
-2. Is there concrete evidence (real output, real data, real behavior) for each truth?
-3. If any truth lacks evidence — it's not verified, regardless of what was reported.
-
-**Treat previous work as a hypothesis, not a fact.** The coder's implementation is a guess about how to solve the problem. QA's report is a guess about whether it works. Your job is to find where these guesses are wrong.
-
-**Ask the skeptical human question.** Re-read the JIRA issue with fresh eyes. What would a skeptical reviewer ask? Ask that question now — dispatch QA or the coder to answer it.
-
-## QA Results
-- Did QA actually run the feature (not just compilation checks)?
-- Does QA have positive evidence (real output, DB rows, visible behavior) — or just "no errors"?
-- If QA found nothing wrong — is that because the feature works, or because QA tested the wrong thing?
-- If QA reported BLOCKED — did you try to unblock it before accepting? (start env, set config, find test data)
-- If QA reported ISSUES — did you send them to the coder with specific details?
-
-## Completeness
-- Re-read the JIRA issue. Is every acceptance criterion covered by QA evidence?
-- Did the coder implement everything, or are there gaps, stubs, or TODOs?
-
-## JIRA Status
-- If the core feature can't be tested — did you post the blocker to JIRA with exactly what a human needs to provide?
-- Is the JIRA ticket in the right status? ("In Review" if shipping, "PM Action" if blocked)
-CHECKLIST_EOF
+CHECKLIST=$(extract_section "Checklist")
 
 if [[ $NEXT -eq 1 ]]; then
-  read -r -d '' PROMPT << PROMPT_EOF || true
-Iteration $NEXT/$MAX_ITERATIONS. The coder finished their first pass. Now verify the work is real.
-
-1. Dispatch wario-qa to test the actual feature — not compilation, not config checks. The real feature with real data.
-2. If QA reports VALIDATED with evidence → review the diff yourself (Phase 4), then finalize.
-3. If QA reports ISSUES → send the failures to the coder to fix, then re-dispatch QA.
-4. If QA reports BLOCKED → can you help unblock? (start env, set config, find test data). If it truly needs something external, write turn-result.json "blocked" and post to JIRA.
-
-$CHECKLIST
-PROMPT_EOF
-
+  PHASE_PROMPT=$(extract_section "First")
 elif [[ $NEXT -ge $MAX_ITERATIONS ]]; then
-  read -r -d '' PROMPT << PROMPT_EOF || true
-Iteration $NEXT/$MAX_ITERATIONS (FINAL). Make a decision now.
-
-If QA validated the core feature with positive evidence:
-→ Open the PR (Phase 5). Include QA evidence in the PR body. Transition JIRA to "In Review". Write turn-result.json "done".
-
-If QA could NOT validate the core feature:
-→ Do NOT open a PR. Post the blocker to JIRA with exactly what a human needs to provide. Transition to "PM Action". Write turn-result.json "blocked".
-
-$CHECKLIST
-PROMPT_EOF
-
+  PHASE_PROMPT=$(extract_section "Final")
 else
-  read -r -d '' PROMPT << PROMPT_EOF || true
-Iteration $NEXT/$MAX_ITERATIONS. Assume the previous iteration's results are wrong until you have independent evidence otherwise.
-
-The coder's report is what they THINK they built. QA's report is what they THINK they tested. Neither is proof. Verify what actually exists and actually works.
-
-Read the QA report from last iteration:
-- FAIL items: send specific failure details to the coder. When coder fixes, re-dispatch QA.
-- BLOCKED items: can you unblock? Check env, credentials, test data. If unblockable, re-dispatch QA. If truly external, write turn-result.json "blocked" and post to JIRA.
-- PASS items: is the evidence real? "No errors" is not evidence of correctness. Absence of failure is not presence of success. Ask QA to show positive proof (real output, real data, real behavior).
-
-$CHECKLIST
-PROMPT_EOF
+  PHASE_PROMPT=$(extract_section "Middle")
 fi
+
+# Substitute {{N}} and {{MAX}} placeholders
+PHASE_PROMPT="${PHASE_PROMPT//\{\{N\}\}/$NEXT}"
+PHASE_PROMPT="${PHASE_PROMPT//\{\{MAX\}\}/$MAX_ITERATIONS}"
+
+PROMPT="${PHASE_PROMPT}
+
+${CHECKLIST}"
 
 # Block exit and re-feed the iteration prompt
 jq -n \
