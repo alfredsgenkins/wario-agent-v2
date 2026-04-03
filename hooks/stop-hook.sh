@@ -62,14 +62,23 @@ mv "${STATE_FILE}.tmp" "$STATE_FILE"
 read -r -d '' CHECKLIST << 'CHECKLIST_EOF' || true
 Review your coordination so far. Answer honestly:
 
-## Critique — challenge your results
-- **Assume previous results might be wrong.** If QA reported "no data found" or "empty response" — that is more likely a code bug (wrong field names, wrong response parsing, wrong query) than genuinely empty data. Dispatch the coder to verify the API response structure matches what the code expects.
-- If the feature "works" but produces zero output — that's a bug, not a success. Real integrations produce real data.
-- Re-read the JIRA issue with fresh eyes. What would a skeptical human ask about your results? Ask that question now.
+## Critique — do not trust previous results
+
+Do NOT trust what the coder or QA reported at face value. Reports document what agents SAID they did. You verify what ACTUALLY works. These often differ.
+
+**Goal-backward verification** — work backwards from the outcome:
+1. What must be TRUE for the JIRA issue to be resolved?
+2. Is there concrete evidence (real output, real data, real behavior) for each truth?
+3. If any truth lacks evidence — it's not verified, regardless of what was reported.
+
+**Treat previous work as a hypothesis, not a fact.** The coder's implementation is a guess about how to solve the problem. QA's report is a guess about whether it works. Your job is to find where these guesses are wrong.
+
+**Ask the skeptical human question.** Re-read the JIRA issue with fresh eyes. What would a skeptical reviewer ask? Ask that question now — dispatch QA or the coder to answer it.
 
 ## QA Results
 - Did QA actually run the feature (not just compilation checks)?
-- Does QA have positive evidence (DB rows, real output, screenshots) — or just "no errors"?
+- Does QA have positive evidence (real output, DB rows, visible behavior) — or just "no errors"?
+- If QA found nothing wrong — is that because the feature works, or because QA tested the wrong thing?
 - If QA reported BLOCKED — did you try to unblock it before accepting? (start env, set config, find test data)
 - If QA reported ISSUES — did you send them to the coder with specific details?
 
@@ -109,14 +118,14 @@ PROMPT_EOF
 
 else
   read -r -d '' PROMPT << PROMPT_EOF || true
-Iteration $NEXT/$MAX_ITERATIONS. Be the skeptic. Assume the previous iteration's results are incomplete or wrong until proven otherwise.
+Iteration $NEXT/$MAX_ITERATIONS. Assume the previous iteration's results are wrong until you have independent evidence otherwise.
+
+The coder's report is what they THINK they built. QA's report is what they THINK they tested. Neither is proof. Verify what actually exists and actually works.
 
 Read the QA report from last iteration:
 - FAIL items: send specific failure details to the coder. When coder fixes, re-dispatch QA.
 - BLOCKED items: can you unblock? Check env, credentials, test data. If unblockable, re-dispatch QA. If truly external, write turn-result.json "blocked" and post to JIRA.
-- PASS items: is the evidence real? "No errors" with zero data processed is not a pass. Zero results from an API that should return data means the code is wrong, not the data.
-
-Also read the diff (git diff). Check the actual API response parsing — are field names correct? Is the response nested when the code assumes flat? Are there type mismatches?
+- PASS items: is the evidence real? "No errors" is not evidence of correctness. Absence of failure is not presence of success. Ask QA to show positive proof (real output, real data, real behavior).
 
 $CHECKLIST
 PROMPT_EOF
